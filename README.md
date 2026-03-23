@@ -12,6 +12,13 @@ Burp Suite extension viet bang Java su dung Montoya API.
 - Luu request dau tien da thay cho moi fingerprint
 - Ho tro `search`, `pause/resume`, `clear`
 - Bang log tach rieng `scheme`, `host`, `port`, `path`, `query`, `full URL`
+- Co the bat/tat static filter va sua danh sach suffix ngay tren UI
+- Co the an/hien cot tuy y va copy chi cac cot dang hien thi
+- Luu cau hinh UI qua moi lan reload extension
+- Luu lai log request da bat duoc qua moi lan reload extension
+- Khi load/reload extension, tu import cac request in-scope dang co trong Proxy history roi dedupe lai
+- Co the day selected requests sang Repeater, Intruder, va Active Scan
+- Khi copy ma dang an cot Query, cot Path se tu copy du lieu dang `path?query`
 - Co tuy chon `Include host in dedupe key` neu ban muon tach rieng theo host/subdomain
 
 ## Build

@@ -55,6 +55,31 @@ public record RequestEntry(
         );
     }
 
+    public static RequestEntry from(long index, HttpRequest request, String firstSeenAt)
+    {
+        HttpService service = request.httpService();
+        String scheme = service.secure() ? "https" : "http";
+        String host = service.host();
+        int port = service.port();
+        String method = safeMethod(request);
+        String path = safePath(request);
+        String query = safeQuery(request);
+        String url = safeUrl(request, scheme, host, port, path, query);
+
+        return new RequestEntry(
+                index,
+                firstSeenAt,
+                method,
+                scheme,
+                host,
+                port,
+                path,
+                query,
+                url,
+                request.copyToTempFile()
+        );
+    }
+
     private static String safeQuery(InterceptedRequest interceptedRequest)
     {
         try
@@ -64,6 +89,67 @@ public record RequestEntry(
         catch (RuntimeException ignored)
         {
             return "";
+        }
+    }
+
+    private static String safeMethod(HttpRequest request)
+    {
+        try
+        {
+            return RequestFingerprint.normalizeMethod(request.method());
+        }
+        catch (RuntimeException ignored)
+        {
+            return "UNKNOWN";
+        }
+    }
+
+    private static String safePath(HttpRequest request)
+    {
+        try
+        {
+            return RequestFingerprint.normalizePath(request.pathWithoutQuery());
+        }
+        catch (RuntimeException ignored)
+        {
+            return "/";
+        }
+    }
+
+    private static String safeQuery(HttpRequest request)
+    {
+        try
+        {
+            return request.query();
+        }
+        catch (RuntimeException ignored)
+        {
+            return "";
+        }
+    }
+
+    private static String safeUrl(HttpRequest request, String scheme, String host, int port, String path, String query)
+    {
+        try
+        {
+            return request.url();
+        }
+        catch (RuntimeException ignored)
+        {
+            StringBuilder builder = new StringBuilder();
+            builder.append(scheme)
+                    .append("://")
+                    .append(host)
+                    .append(':')
+                    .append(port)
+                    .append(path);
+
+            if (!query.isBlank())
+            {
+                builder.append('?').append(query);
+            }
+
+            return builder.toString();
         }
     }
 }

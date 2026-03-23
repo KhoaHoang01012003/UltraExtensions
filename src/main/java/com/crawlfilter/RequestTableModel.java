@@ -6,6 +6,9 @@ import java.util.List;
 
 public final class RequestTableModel extends AbstractTableModel
 {
+    public static final int PATH_COLUMN_INDEX = 6;
+    public static final int QUERY_COLUMN_INDEX = 7;
+
     private static final String[] COLUMNS = {
             "#",
             "First Seen",
@@ -19,6 +22,27 @@ public final class RequestTableModel extends AbstractTableModel
     };
 
     private final List<RequestEntry> entries = new ArrayList<>();
+
+    public static int columnCount()
+    {
+        return COLUMNS.length;
+    }
+
+    public static boolean isValidColumnModelIndex(int modelIndex)
+    {
+        return modelIndex >= 0 && modelIndex < COLUMNS.length;
+    }
+
+    public static List<Integer> defaultVisibleColumnModelIndices()
+    {
+        List<Integer> visibleColumns = new ArrayList<>(COLUMNS.length);
+        for (int modelIndex = 0; modelIndex < COLUMNS.length; modelIndex++)
+        {
+            visibleColumns.add(modelIndex);
+        }
+
+        return visibleColumns;
+    }
 
     @Override
     public int getRowCount()
@@ -74,6 +98,13 @@ public final class RequestTableModel extends AbstractTableModel
         int row = entries.size();
         entries.add(entry);
         fireTableRowsInserted(row, row);
+    }
+
+    public void setEntries(List<RequestEntry> restoredEntries)
+    {
+        entries.clear();
+        entries.addAll(restoredEntries);
+        fireTableDataChanged();
     }
 
     public void clearEntries()
