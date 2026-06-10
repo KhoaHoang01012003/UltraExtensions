@@ -38,13 +38,13 @@ public final class CacheManager {
         if (!target.startsWith(confinedCache)) {
             throw new IOException("Refusing to write outside cache: " + relativePath);
         }
-        verifyParentRealPath(confinedCache, target);
 
         String actual = sha256(content);
         if (!actual.equalsIgnoreCase(expectedSha256)) {
             throw new IOException("SHA-256 mismatch for " + relativePath + ": expected " + expectedSha256 + " but got " + actual);
         }
-        Files.createDirectories(target.getParent());
+        ensureSafeParent(confinedCache, target.getParent());
+        verifySafeTarget(confinedCache, target);
         Files.write(target, content);
         return target;
     }
@@ -70,21 +70,38 @@ public final class CacheManager {
         return normalizedCache;
     }
 
-    private static void verifyParentRealPath(Path confinedCache, Path target) throws IOException {
-        Files.createDirectories(target.getParent());
+    private static void ensureSafeParent(Path confinedCache, Path targetParent) throws IOException {
         Path cacheReal = confinedCache.toRealPath();
-        Path parentReal = target.getParent().toRealPath();
-        if (!parentReal.startsWith(cacheReal)) {
-            throw new IOException("Refusing to write through cache path outside cache: " + target);
+        Path current = confinedCache;
+        Path relativeParent = confinedCache.relativize(targetParent);
+        for (Path segment : relativeParent) {
+            current = current.resolve(segment).normalize();
+            if (Files.exists(current, LinkOption.NOFOLLOW_LINKS)) {
+                if (!Files.isDirectory(current, LinkOption.NOFOLLOW_LINKS)) {
+                    throw new IOException("Refusing to use non-directory cache parent: " + current);
+                }
+                if (!current.toRealPath().startsWith(cacheReal)) {
+                    throw new IOException("Refusing to use cache parent outside cache: " + current);
+                }
+            } else {
+                Files.createDirectory(current);
+                if (!current.toRealPath().startsWith(cacheReal)) {
+                    throw new IOException("Created cache parent outside cache: " + current);
+                }
+            }
         }
+    }
+
+    private static void verifySafeTarget(Path confinedCache, Path target) throws IOException {
+        Path cacheReal = confinedCache.toRealPath();
         if (Files.isSymbolicLink(target)) {
             throw new IOException("Refusing to write through symbolic link: " + target);
         }
-        // This pre-write check resolves existing symlinks, but it is not a full TOCTOU defense
-        // against concurrent filesystem mutation between validation and Files.write.
         if (Files.exists(target, LinkOption.NOFOLLOW_LINKS) && !target.toRealPath().startsWith(cacheReal)) {
             throw new IOException("Refusing to overwrite target outside cache: " + target);
         }
+        // Existing ancestors are resolved before creation, but this is still not a full TOCTOU
+        // defense against concurrent filesystem mutation between validation and Files.write.
     }
 
     private static String sha256(byte[] content) throws IOException {
