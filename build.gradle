@@ -27,6 +27,8 @@ graalPy {
 
 dependencies {
     compileOnly "net.portswigger.burp.extensions:montoya-api:2026.4"
+    testCompileOnly "net.portswigger.burp.extensions:montoya-api:2026.4"
+    testRuntimeOnly "net.portswigger.burp.extensions:montoya-api:2026.4"
 
     implementation "org.graalvm.python:python-embedding:25.0.3"
     implementation "com.formdev:flatlaf:3.7.1"

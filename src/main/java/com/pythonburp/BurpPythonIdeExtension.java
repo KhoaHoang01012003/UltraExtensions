@@ -9,13 +9,30 @@ public final class BurpPythonIdeExtension {
     private ExtensionContext context;
 
     public void initialize(MontoyaApi api) {
+        closeContext();
         api.extension().setName(VersionInfo.EXTENSION_NAME);
-        this.context = new ExtensionContext(api, new IdeExecutors(defaultScriptThreads()));
+        ExtensionContext initializedContext = new ExtensionContext(api, new IdeExecutors(defaultScriptThreads()));
+        this.context = initializedContext;
+        api.extension().registerUnloadingHandler(() -> closeContext(initializedContext));
         api.logging().logToOutput(VersionInfo.EXTENSION_NAME + " " + VersionInfo.EXTENSION_VERSION + " loaded");
     }
 
     private int defaultScriptThreads() {
         int cpus = Runtime.getRuntime().availableProcessors();
         return Math.max(1, Math.min(4, cpus - 1));
+    }
+
+    private void closeContext() {
+        ExtensionContext currentContext = context;
+        if (currentContext != null) {
+            closeContext(currentContext);
+        }
+    }
+
+    private void closeContext(ExtensionContext contextToClose) {
+        contextToClose.close();
+        if (context == contextToClose) {
+            context = null;
+        }
     }
 }
