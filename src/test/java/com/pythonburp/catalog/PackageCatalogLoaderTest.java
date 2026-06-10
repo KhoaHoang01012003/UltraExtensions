@@ -2,7 +2,12 @@ package com.pythonburp.catalog;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.util.Map;
+import java.util.stream.Collectors;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class PackageCatalogLoaderTest {
@@ -10,7 +15,51 @@ final class PackageCatalogLoaderTest {
     void loadsBundledCatalog() throws Exception {
         PackageCatalog catalog = PackageCatalogLoader.loadBundled();
 
-        assertTrue(catalog.find("beautifulsoup4").isPresent());
-        assertEquals("java-backed", catalog.find("burp.crypto").orElseThrow().tier());
+        assertEquals(5, catalog.entries().size());
+
+        Map<String, PackageCatalogEntry> entries = catalog.entries().stream()
+            .collect(Collectors.toMap(PackageCatalogEntry::name, entry -> entry));
+
+        assertTrue(entries.containsKey("burp.crypto"));
+        assertEquals("java-backed", entries.get("burp.crypto").tier());
+        assertEquals("0.1.0", entries.get("burp.encoder").version());
+        assertEquals("pure-python", entries.get("beautifulsoup4").tier());
+        assertEquals("locked-by-graalpy", entries.get("html5lib").version());
+        assertEquals("tested-graalpy", entries.get("pyjwt").tier());
+        assertTrue(entries.get("pyjwt").smokeTest().contains("import jwt"));
+    }
+
+    @Test
+    void parsesEscapedSmokeTests() throws Exception {
+        PackageCatalog catalog = PackageCatalogLoader.parse("""
+            [
+              {
+                "name": "example",
+                "version": "1.0.0",
+                "tier": "pure-python",
+                "nativeRequired": false,
+                "smokeTest": "print(\\"brace } quote\\")"
+              }
+            ]
+            """);
+
+        assertEquals(1, catalog.entries().size());
+        assertEquals("print(\"brace } quote\")", catalog.entries().get(0).smokeTest());
+    }
+
+    @Test
+    void rejectsUnknownFields() {
+        assertThrows(IOException.class, () -> PackageCatalogLoader.parse("""
+            [
+              {
+                "name": "example",
+                "version": "1.0.0",
+                "tier": "pure-python",
+                "nativeRequired": false,
+                "smokeTest": "print(1)",
+                "unexpected": "value"
+              }
+            ]
+            """));
     }
 }
