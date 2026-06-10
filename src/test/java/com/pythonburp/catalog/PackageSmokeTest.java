@@ -7,6 +7,8 @@ import com.pythonburp.python.ScriptRunResult;
 import com.pythonburp.python.ScriptStatus;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class PackageSmokeTest {
@@ -16,7 +18,7 @@ final class PackageSmokeTest {
         StringBuilder failures = new StringBuilder();
         try (PythonRuntime runtime = new GraalPyPythonRuntime(new BurpBridge())) {
             for (PackageCatalogEntry entry : catalog.entries()) {
-                ScriptRunResult result = runtime.execute(entry.smokeTest());
+                ScriptRunResult result = runtime.execute(entry.smokeTest(), Duration.ofSeconds(30));
                 if (result.status() != ScriptStatus.SUCCEEDED) {
                     failures.append(entry.name())
                         .append(" failed: ")

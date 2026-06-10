@@ -2,6 +2,7 @@ package com.pythonburp.python;
 
 import com.pythonburp.bridge.BurpBridge;
 import org.graalvm.polyglot.Context;
+import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.io.IOAccess;
 import org.graalvm.python.embedding.GraalPyResources;
 import org.graalvm.python.embedding.VirtualFileSystem;
@@ -9,29 +10,46 @@ import org.graalvm.python.embedding.VirtualFileSystem;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Path;
-import java.nio.file.Files;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class GraalPyPythonRuntime implements PythonRuntime {
     private static final String RESOURCE_DIRECTORY = "GRAALPY-VFS/com.pythonburp/burp-python-ide";
     private static final String BURP_RESOURCE_ROOT = "/" + RESOURCE_DIRECTORY + "/src/burp";
     private static final Path WORKING_DIRECTORY = Path.of("").toAbsolutePath().normalize();
+    private static final ScheduledExecutorService TIMEOUTS = Executors.newSingleThreadScheduledExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "burp-python-runtime-timeout");
+        thread.setDaemon(true);
+        return thread;
+    });
     private final BurpBridge bridge;
+    private final GraalPyResourceCache resourceCache;
 
     public GraalPyPythonRuntime(BurpBridge bridge) {
+        this(bridge, GraalPyResourceCache.DEFAULT);
+    }
+
+    GraalPyPythonRuntime(BurpBridge bridge, GraalPyResourceCache resourceCache) {
         this.bridge = Objects.requireNonNull(bridge, "bridge");
+        this.resourceCache = Objects.requireNonNull(resourceCache, "resourceCache");
     }
 
     @Override
-    public ScriptRunResult execute(String source) {
+    public ScriptRunResult execute(String source, Duration timeout) {
+        Objects.requireNonNull(timeout, "timeout");
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
         ByteArrayOutputStream stderr = new ByteArrayOutputStream();
-        Path extractionRoot = null;
+        AtomicBoolean timedOut = new AtomicBoolean(false);
+        ScheduledFuture<?> timeoutTask = null;
         try (VirtualFileSystem fileSystem = VirtualFileSystem.newBuilder()
             .resourceDirectory(RESOURCE_DIRECTORY)
             .resourceLoadingClass(GraalPyPythonRuntime.class)
@@ -43,8 +61,13 @@ public final class GraalPyPythonRuntime implements PythonRuntime {
                  .out(stdout)
                  .err(stderr)
                  .build()) {
-            extractionRoot = Files.createTempDirectory("burp-python-vfs-");
-            GraalPyResources.extractVirtualFileSystemResources(fileSystem, extractionRoot);
+            Path extractionRoot = resourceCache.extractionRoot(fileSystem);
+            if (!timeout.isZero() && !timeout.isNegative()) {
+                timeoutTask = TIMEOUTS.schedule(() -> {
+                    timedOut.set(true);
+                    context.close(true);
+                }, timeout.toMillis(), TimeUnit.MILLISECONDS);
+            }
 
             context.getBindings("python").putMember("burpBridge", bridge);
             context.getBindings("python").putMember("burpModuleRoot", fileSystem.getMountPoint() + "/src");
@@ -87,10 +110,17 @@ public final class GraalPyPythonRuntime implements PythonRuntime {
                 """);
             context.eval("python", source);
             return ScriptRunResult.succeeded(text(stdout), text(stderr));
+        } catch (PolyglotException e) {
+            if (timedOut.get()) {
+                return ScriptRunResult.failed(text(stdout), text(stderr), "Script timed out after " + timeout);
+            }
+            return ScriptRunResult.failed(text(stdout), text(stderr), e.toString());
         } catch (IOException | RuntimeException e) {
             return ScriptRunResult.failed(text(stdout), text(stderr), e.toString());
         } finally {
-            deleteRecursively(extractionRoot);
+            if (timeoutTask != null) {
+                timeoutTask.cancel(false);
+            }
         }
     }
 
@@ -123,22 +153,5 @@ public final class GraalPyPythonRuntime implements PythonRuntime {
         candidates.add(extractionRoot.resolve("GRAALPY-VFS").resolve("com.pythonburp").resolve("burp-python-ide").resolve("src").toString());
         candidates.add(extractionRoot.resolve("GRAALPY-VFS").resolve("com.pythonburp").resolve("burp-python-ide").resolve("venv").resolve("Lib").resolve("site-packages").toString());
         return candidates;
-    }
-
-    private static void deleteRecursively(Path root) {
-        if (root == null || !Files.exists(root)) {
-            return;
-        }
-        try {
-            Files.walk(root)
-                .sorted(Comparator.reverseOrder())
-                .forEach(path -> {
-                    try {
-                        Files.deleteIfExists(path);
-                    } catch (IOException ignored) {
-                    }
-                });
-        } catch (IOException ignored) {
-        }
     }
 }

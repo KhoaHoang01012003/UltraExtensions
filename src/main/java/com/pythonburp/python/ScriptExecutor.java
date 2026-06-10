@@ -19,7 +19,7 @@ public final class ScriptExecutor {
         Objects.requireNonNull(request, "request");
         return executors.submitScript(() -> {
             try (PythonRuntime runtime = runtimeFactory.get()) {
-                return runtime.execute(request.source());
+                return runtime.execute(request.source(), request.timeout());
             }
         });
     }

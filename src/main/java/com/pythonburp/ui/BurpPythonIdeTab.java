@@ -20,6 +20,7 @@ import javax.swing.JToolBar;
 import java.awt.BorderLayout;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.Future;
 
 public final class BurpPythonIdeTab extends JPanel {
@@ -59,18 +60,22 @@ public final class BurpPythonIdeTab extends JPanel {
 
     private void runScript() {
         Edt.requireEdt();
+        if (activeRun != null && !activeRun.isDone()) {
+            statusBar.setStatus("Already running");
+            return;
+        }
         statusBar.setStatus("Running");
         console.appendSystem("Running script");
-        activeRun = scriptExecutor.run(new ScriptRunRequest(editor.source(), Duration.ofMinutes(5)));
+        Future<ScriptRunResult> run = scriptExecutor.run(new ScriptRunRequest(editor.source(), Duration.ofMinutes(5)));
+        activeRun = run;
         Thread waiter = new Thread(() -> {
             try {
-                ScriptRunResult result = activeRun.get();
-                Edt.runLater(() -> publishResult(result));
+                ScriptRunResult result = run.get();
+                Edt.runLater(() -> publishResult(run, result));
+            } catch (CancellationException e) {
+                Edt.runLater(() -> publishCancelled(run));
             } catch (Exception e) {
-                Edt.runLater(() -> {
-                    statusBar.setStatus("Failed");
-                    console.append(List.of(ConsoleEvent.now(ConsoleEventType.STDERR, e.toString())));
-                });
+                Edt.runLater(() -> publishFailure(run, e));
             }
         }, "burp-python-ui-result-waiter");
         waiter.setDaemon(true);
@@ -79,23 +84,44 @@ public final class BurpPythonIdeTab extends JPanel {
 
     private void stopScript() {
         Edt.requireEdt();
-        if (activeRun != null) {
+        if (activeRun != null && !activeRun.isDone()) {
             activeRun.cancel(true);
             statusBar.setStatus("Stopping");
         }
     }
 
-    private void publishResult(ScriptRunResult result) {
+    private void publishFailure(Future<ScriptRunResult> run, Exception e) {
         Edt.requireEdt();
-        if (!result.stdout().isBlank()) {
-            console.append(List.of(ConsoleEvent.now(ConsoleEventType.STDOUT, result.stdout())));
+        if (activeRun == run) {
+            activeRun = null;
+            statusBar.setStatus("Failed");
+            console.append(List.of(ConsoleEvent.now(ConsoleEventType.STDERR, e.toString())));
         }
-        if (!result.stderr().isBlank()) {
-            console.append(List.of(ConsoleEvent.now(ConsoleEventType.STDERR, result.stderr())));
+    }
+
+    private void publishCancelled(Future<ScriptRunResult> run) {
+        Edt.requireEdt();
+        if (activeRun == run) {
+            activeRun = null;
+            statusBar.setStatus("Ready");
+            console.appendSystem("Script stopped");
         }
-        if (!result.errorMessage().isBlank()) {
-            console.append(List.of(ConsoleEvent.now(ConsoleEventType.STDERR, result.errorMessage())));
+    }
+
+    private void publishResult(Future<ScriptRunResult> run, ScriptRunResult result) {
+        Edt.requireEdt();
+        if (activeRun == run) {
+            activeRun = null;
+            if (!result.stdout().isBlank()) {
+                console.append(List.of(ConsoleEvent.now(ConsoleEventType.STDOUT, result.stdout())));
+            }
+            if (!result.stderr().isBlank()) {
+                console.append(List.of(ConsoleEvent.now(ConsoleEventType.STDERR, result.stderr())));
+            }
+            if (!result.errorMessage().isBlank()) {
+                console.append(List.of(ConsoleEvent.now(ConsoleEventType.STDERR, result.errorMessage())));
+            }
+            statusBar.setStatus(result.status() == ScriptStatus.SUCCEEDED ? "Ready" : "Failed");
         }
-        statusBar.setStatus(result.status() == ScriptStatus.SUCCEEDED ? "Ready" : "Failed");
     }
 }
