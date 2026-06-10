@@ -1,0 +1,78 @@
+plugins {
+    id "java"
+    id "org.graalvm.python" version "25.0.3"
+}
+
+group = "com.pythonburp"
+version = "0.1.0"
+
+graalPy {
+    packages = [
+        "beautifulsoup4",
+        "html5lib",
+        "defusedxml",
+        "xmltodict",
+        "python-dateutil",
+        "charset-normalizer",
+        "idna",
+        "tabulate",
+        "rich",
+        "colorama",
+        "pyjwt",
+        "passlib"
+    ]
+    resourceDirectory = "GRAALPY-VFS/com.pythonburp/burp-python-ide"
+    graalPyLockFile = file("$rootDir/graalpy.lock")
+}
+
+dependencies {
+    compileOnly "net.portswigger.burp.extensions:montoya-api:2026.4"
+
+    implementation "org.graalvm.python:python-embedding:25.0.3"
+    implementation "com.formdev:flatlaf:3.7.1"
+    implementation "com.fifesoft:rsyntaxtextarea:3.6.0"
+    implementation "org.bouncycastle:bcprov-jdk18on:1.84"
+    implementation "org.bouncycastle:bcpkix-jdk18on:1.84"
+
+    testImplementation platform("org.junit:junit-bom:6.1.0")
+    testImplementation "org.junit.jupiter:junit-jupiter"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
+    options.release = 21
+}
+
+test {
+    useJUnitPlatform()
+}
+
+tasks.register("fatJar", Jar) {
+    group = "build"
+    description = "Builds the Burp-loadable single JAR extension."
+    archiveClassifier = "all"
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    from sourceSets.main.output
+    from {
+        configurations.runtimeClasspath.findAll { dependency ->
+            dependency.isDirectory() || dependency.name.endsWith(".jar")
+        }.collect { dependency ->
+            dependency.isDirectory() ? dependency : zipTree(dependency)
+        }
+    }
+
+    exclude "META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA"
+
+    manifest {
+        attributes(
+            "Implementation-Title": "Burp Python IDE Enhanced",
+            "Implementation-Version": project.version
+        )
+    }
+}
+
+tasks.named("build") {
+    dependsOn tasks.named("fatJar")
+}
