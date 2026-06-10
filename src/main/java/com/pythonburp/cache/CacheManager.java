@@ -1,9 +1,11 @@
 package com.pythonburp.cache;
 
 import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
@@ -45,7 +47,17 @@ public final class CacheManager {
         }
         ensureSafeParent(confinedCache, target.getParent());
         verifySafeTarget(confinedCache, target);
-        Files.write(target, content);
+        Path staging = Files.createTempFile(target.getParent(), ".cache-", ".tmp");
+        try {
+            Files.write(staging, content);
+            try {
+                Files.move(staging, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(staging, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(staging);
+        }
         return target;
     }
 

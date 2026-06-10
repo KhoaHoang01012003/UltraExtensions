@@ -109,6 +109,24 @@ final class CacheManagerTest {
     }
 
     @Test
+    void writeVerifiedReplacesHardLinkWithoutMutatingOutsideTarget() throws Exception {
+        CacheKey key = new CacheKey("0.1.0", "25.0.3", "windows", "amd64", "hash");
+        CacheManager manager = new CacheManager(tempDir);
+        Path cache = manager.prepareCache(key);
+        Path outsideFile = tempDir.resolve("outside-source.txt");
+        Files.writeString(outsideFile, "outside");
+        Path hardLink = cache.resolve("hardlink.txt");
+        assumeTrue(canCreateHardLink(hardLink, outsideFile), "hard links are not available in this test environment");
+        byte[] content = "hello".getBytes(StandardCharsets.UTF_8);
+        String sha256 = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+
+        Path target = manager.writeVerified(cache, "hardlink.txt", content, sha256);
+
+        assertEquals("outside", Files.readString(outsideFile));
+        assertEquals("hello", Files.readString(target));
+    }
+
+    @Test
     void directoryNameKeepsDistinctRawKeysFromCollapsing() {
         CacheKey punctuation = new CacheKey("0.1.0", "25.0.3", "windows", "amd64", "a/b");
         CacheKey space = new CacheKey("0.1.0", "25.0.3", "windows", "amd64", "a b");
@@ -133,6 +151,15 @@ final class CacheManagerTest {
                 target.toString()
             ).redirectErrorStream(true).start();
             return process.waitFor() == 0 && Files.isDirectory(link);
+        }
+    }
+
+    private static boolean canCreateHardLink(Path link, Path target) throws IOException {
+        try {
+            Files.createLink(link, target);
+            return Files.exists(link);
+        } catch (UnsupportedOperationException | IOException | SecurityException e) {
+            return false;
         }
     }
 }
