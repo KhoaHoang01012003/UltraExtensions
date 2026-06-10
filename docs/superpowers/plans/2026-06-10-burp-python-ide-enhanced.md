@@ -208,7 +208,8 @@ tasks.register("fatJar", Jar) {
     manifest {
         attributes(
             "Implementation-Title": "Burp Python IDE Enhanced",
-            "Implementation-Version": project.version
+            "Implementation-Version": project.version,
+            "Multi-Release": "true"
         )
     }
 }

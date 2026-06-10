@@ -405,6 +405,8 @@ The JAR contains:
 - Native compatibility resources.
 - Snippet templates.
 
+Because GraalPy/Truffle dependencies include multi-release classes, the fat JAR manifest must preserve `Multi-Release: true`. The build must also strip signature files and include an isolated fat-JAR smoke test that loads the generated JAR through a separate classloader and creates a GraalPy context.
+
 Build outputs:
 
 ```text
@@ -428,6 +430,7 @@ Automated tests:
 - Smoke tests for package imports.
 - Smoke tests for native extraction and hash verification.
 - Unit tests for console buffering and bounded output behavior.
+- Isolated fat-JAR smoke test that catches Burp-style extension classloader packaging failures.
 
 Burp integration tests:
 
@@ -469,6 +472,7 @@ First useful release:
 - Bundled pure-Python catalog imports successfully.
 - Enhanced cache extraction works.
 - Native pack integrity checks work.
+- Fat JAR works when loaded through an isolated extension-style classloader.
 - Unsupported packages fail with clear messages.
 
 Not required for first release:

@@ -58,10 +58,6 @@ tasks.register("packageSmokeTest", Test) {
     shouldRunAfter test
 }
 
-check {
-    dependsOn tasks.named("packageSmokeTest")
-}
-
 tasks.register("fatJar", Jar) {
     group = "build"
     description = "Builds the Burp-loadable single JAR extension."
@@ -82,11 +78,29 @@ tasks.register("fatJar", Jar) {
     manifest {
         attributes(
             "Implementation-Title": "Burp Python IDE Enhanced",
-            "Implementation-Version": project.version
+            "Implementation-Version": project.version,
+            "Multi-Release": "true"
         )
+    }
+}
+
+tasks.register("fatJarIsolatedSmoke", JavaExec) {
+    description = "Loads the fat JAR through an isolated classloader and runs a GraalPy smoke script."
+    group = "verification"
+    dependsOn tasks.named("fatJar"), tasks.named("compileTestJava")
+    classpath = sourceSets.test.output.classesDirs
+    mainClass = "com.pythonburp.fatjar.IsolatedFatJarSmoke"
+    shouldRunAfter tasks.named("packageSmokeTest")
+    doFirst {
+        args = [tasks.named("fatJar").get().archiveFile.get().asFile.absolutePath]
     }
 }
 
 tasks.named("build") {
     dependsOn tasks.named("fatJar")
+}
+
+check {
+    dependsOn tasks.named("packageSmokeTest")
+    dependsOn tasks.named("fatJarIsolatedSmoke")
 }
