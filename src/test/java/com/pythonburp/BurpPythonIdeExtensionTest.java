@@ -4,6 +4,7 @@ import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.extension.Extension;
 import burp.api.montoya.extension.ExtensionUnloadingHandler;
 import burp.api.montoya.logging.Logging;
+import burp.api.montoya.ui.UserInterface;
 import com.pythonburp.core.ExtensionContext;
 import org.junit.jupiter.api.Test;
 
@@ -59,6 +60,7 @@ final class BurpPythonIdeExtensionTest {
         private final List<ExtensionUnloadingHandler> unloadingHandlers = new ArrayList<>();
         private final Extension extension = proxy(Extension.class, this::handleExtensionCall);
         private final Logging logging = proxy(Logging.class, this::handleLoggingCall);
+        private final UserInterface userInterface = proxy(UserInterface.class, this::handleUserInterfaceCall);
         private final MontoyaApi api = proxy(MontoyaApi.class, this::handleApiCall);
 
         MontoyaApi api() {
@@ -69,6 +71,7 @@ final class BurpPythonIdeExtensionTest {
             return switch (method.getName()) {
                 case "extension" -> extension;
                 case "logging" -> logging;
+                case "userInterface" -> userInterface;
                 default -> defaultValue(method.getReturnType());
             };
         }
@@ -81,6 +84,10 @@ final class BurpPythonIdeExtensionTest {
         }
 
         private Object handleLoggingCall(Method method, Object[] args) {
+            return defaultValue(method.getReturnType());
+        }
+
+        private Object handleUserInterfaceCall(Method method, Object[] args) {
             return defaultValue(method.getReturnType());
         }
     }
