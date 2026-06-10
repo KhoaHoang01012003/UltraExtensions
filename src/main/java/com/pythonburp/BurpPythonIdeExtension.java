@@ -1,7 +1,6 @@
 package com.pythonburp;
 
 import burp.api.montoya.MontoyaApi;
-import com.formdev.flatlaf.FlatDarkLaf;
 import com.pythonburp.bridge.BurpBridge;
 import com.pythonburp.bridge.MontoyaHttpBridge;
 import com.pythonburp.catalog.PackageCatalog;
@@ -19,7 +18,6 @@ public final class BurpPythonIdeExtension {
     public void initialize(MontoyaApi api) {
         closeContext();
         api.extension().setName(VersionInfo.EXTENSION_NAME);
-        FlatDarkLaf.setup();
         ExtensionContext initializedContext = new ExtensionContext(api, new IdeExecutors(defaultScriptThreads()));
         this.context = initializedContext;
         PackageCatalog catalog = loadCatalog(api);

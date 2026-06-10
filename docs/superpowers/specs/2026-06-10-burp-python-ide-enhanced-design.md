@@ -121,6 +121,7 @@ Threading rules:
 
 - The Montoya extension entry point registers UI components quickly and returns.
 - Swing components are created and mutated only on the Event Dispatch Thread.
+- The extension inherits Burp's current Look and Feel and must not call global Look and Feel installers such as `UIManager.setLookAndFeel(...)` or `FlatLaf.setup()`.
 - GraalPy startup, package extraction, package smoke tests, script execution, import scanning, formatting, and long Burp API calls run on background executors.
 - The UI never calls `Future.get()`, `Thread.sleep()`, `join()`, native extraction, package import, or script execution on the Event Dispatch Thread.
 - Console output is buffered on a background queue and flushed to Swing in batches.
@@ -490,7 +491,7 @@ Runtime size is also a risk. Bundling GraalPy and dependencies will produce a la
 
 - Implementation language: Java, because Burp's current extension examples and Montoya documentation are Java-first.
 - Python engine candidate: GraalPy 25.0.3, pinned during implementation unless smoke tests show a blocker.
-- UI toolkit: Swing with FlatLaf for look and feel, RSyntaxTextArea for Python editing, and standard Swing split panes/tabs for layout.
+- UI toolkit: Swing inheriting Burp's host Look and Feel, RSyntaxTextArea for Python editing, and standard Swing split panes/tabs for layout.
 - Responsiveness model: background `ExecutorService` for runtime, script, package, and Burp-data tasks; EDT only for Swing UI updates.
 - Default Windows cache path: `%LOCALAPPDATA%\BurpPythonIDE\cache\<extension-version>-<catalog-hash>\`.
 - First catalog scope: pentest scripting packages and Java-backed Burp helpers before data-science packages.

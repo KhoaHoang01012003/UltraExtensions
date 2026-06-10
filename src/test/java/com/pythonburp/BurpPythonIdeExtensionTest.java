@@ -8,6 +8,7 @@ import burp.api.montoya.ui.UserInterface;
 import com.pythonburp.core.ExtensionContext;
 import org.junit.jupiter.api.Test;
 
+import javax.swing.UIManager;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -48,6 +49,17 @@ final class BurpPythonIdeExtensionTest {
 
         assertThrows(RejectedExecutionException.class, () -> firstContext.executors().submitScript(() -> 1));
         assertEquals(1, secondStub.unloadingHandlers.size());
+    }
+
+    @Test
+    void initializeDoesNotChangeHostLookAndFeel() throws Exception {
+        Object before = UIManager.getLookAndFeel();
+        BurpPythonIdeExtension extension = new BurpPythonIdeExtension();
+        StubMontoyaApi stub = new StubMontoyaApi();
+
+        extension.initialize(stub.api());
+
+        assertEquals(before, UIManager.getLookAndFeel());
     }
 
     private static ExtensionContext contextFrom(BurpPythonIdeExtension extension) throws Exception {
