@@ -10,7 +10,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
+import java.nio.file.Files;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 
 public final class GraalPyPythonRuntime implements PythonRuntime {
@@ -27,6 +31,7 @@ public final class GraalPyPythonRuntime implements PythonRuntime {
     public ScriptRunResult execute(String source) {
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
         ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+        Path extractionRoot = null;
         try (VirtualFileSystem fileSystem = VirtualFileSystem.newBuilder()
             .resourceDirectory(RESOURCE_DIRECTORY)
             .resourceLoadingClass(GraalPyPythonRuntime.class)
@@ -38,9 +43,16 @@ public final class GraalPyPythonRuntime implements PythonRuntime {
                  .out(stdout)
                  .err(stderr)
                  .build()) {
+            extractionRoot = Files.createTempDirectory("burp-python-vfs-");
+            GraalPyResources.extractVirtualFileSystemResources(fileSystem, extractionRoot);
+
             context.getBindings("python").putMember("burpBridge", bridge);
             context.getBindings("python").putMember("burpModuleRoot", fileSystem.getMountPoint() + "/src");
             context.getBindings("python").putMember("burpResourceModuleRoot", "/" + RESOURCE_DIRECTORY + "/src");
+            context.getBindings("python").putMember("venvSitePackages", fileSystem.getMountPoint() + "/venv/Lib/site-packages");
+            context.getBindings("python").putMember("resourceVenvSitePackages", "/" + RESOURCE_DIRECTORY + "/venv/Lib/site-packages");
+            List<String> extractedPaths = extractedModulePaths(extractionRoot);
+            context.getBindings("python").putMember("extractedModulePaths", extractedPaths.toArray(String[]::new));
             context.getBindings("python").putMember("burpInitSource", loadResource("burp/__init__.py"));
             context.getBindings("python").putMember("burpEncoderSource", loadResource("burp/encoder.py"));
             context.getBindings("python").putMember("burpCryptoSource", loadResource("burp/crypto.py"));
@@ -50,7 +62,10 @@ public final class GraalPyPythonRuntime implements PythonRuntime {
                 import types
 
                 builtins.burpBridge = burpBridge
-                for candidate in (burpModuleRoot, burpResourceModuleRoot):
+                for candidate in (burpModuleRoot, burpResourceModuleRoot, venvSitePackages, resourceVenvSitePackages):
+                    if candidate not in sys.path:
+                        sys.path.insert(0, candidate)
+                for candidate in extractedModulePaths:
                     if candidate not in sys.path:
                         sys.path.insert(0, candidate)
 
@@ -74,6 +89,8 @@ public final class GraalPyPythonRuntime implements PythonRuntime {
             return ScriptRunResult.succeeded(text(stdout), text(stderr));
         } catch (IOException | RuntimeException e) {
             return ScriptRunResult.failed(text(stdout), text(stderr), e.toString());
+        } finally {
+            deleteRecursively(extractionRoot);
         }
     }
 
@@ -92,6 +109,36 @@ public final class GraalPyPythonRuntime implements PythonRuntime {
                 throw new IOException("Missing Python wrapper resource " + resourcePath);
             }
             return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    private static List<String> extractedModulePaths(Path extractionRoot) {
+        if (extractionRoot == null) {
+            return List.of();
+        }
+
+        List<String> candidates = new ArrayList<>();
+        candidates.add(extractionRoot.resolve("src").toString());
+        candidates.add(extractionRoot.resolve("venv").resolve("Lib").resolve("site-packages").toString());
+        candidates.add(extractionRoot.resolve("GRAALPY-VFS").resolve("com.pythonburp").resolve("burp-python-ide").resolve("src").toString());
+        candidates.add(extractionRoot.resolve("GRAALPY-VFS").resolve("com.pythonburp").resolve("burp-python-ide").resolve("venv").resolve("Lib").resolve("site-packages").toString());
+        return candidates;
+    }
+
+    private static void deleteRecursively(Path root) {
+        if (root == null || !Files.exists(root)) {
+            return;
+        }
+        try {
+            Files.walk(root)
+                .sorted(Comparator.reverseOrder())
+                .forEach(path -> {
+                    try {
+                        Files.deleteIfExists(path);
+                    } catch (IOException ignored) {
+                    }
+                });
+        } catch (IOException ignored) {
         }
     }
 }

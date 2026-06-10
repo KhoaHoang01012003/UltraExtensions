@@ -8,7 +8,6 @@ version = "0.1.0"
 
 graalPy {
     packages = [
-        "beautifulsoup4",
         "html5lib",
         "defusedxml",
         "xmltodict",
@@ -48,6 +47,20 @@ tasks.withType(JavaCompile).configureEach {
 
 test {
     useJUnitPlatform()
+}
+
+tasks.register("packageSmokeTest", Test) {
+    description = "Runs GraalPy import and package compatibility smoke tests."
+    group = "verification"
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    include "**/PackageSmokeTest.class"
+    shouldRunAfter test
+}
+
+check {
+    dependsOn tasks.named("packageSmokeTest")
 }
 
 tasks.register("fatJar", Jar) {

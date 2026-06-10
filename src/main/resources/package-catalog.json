@@ -14,13 +14,6 @@
     "smokeTest": "from burp import encoder; print(encoder.base64_encode(b'abc'))"
   },
   {
-    "name": "beautifulsoup4",
-    "version": "locked-by-graalpy",
-    "tier": "pure-python",
-    "nativeRequired": false,
-    "smokeTest": "import bs4; print(bs4.__name__)"
-  },
-  {
     "name": "html5lib",
     "version": "locked-by-graalpy",
     "tier": "pure-python",

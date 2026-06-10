@@ -7,8 +7,7 @@
 # This file contains a list of all required Python packages with their specific versions,
 # based on the packages defined in the plugin configuration and their dependencies.
 # graalpy-version: 25.0.3
-# input-packages: beautifulsoup4,html5lib,defusedxml,xmltodict,python-dateutil,charset-normalizer,idna,tabulate,rich,colorama,pyjwt,passlib
-beautifulsoup4==4.15.0
+# input-packages: html5lib,defusedxml,xmltodict,python-dateutil,charset-normalizer,idna,tabulate,rich,colorama,pyjwt,passlib
 charset-normalizer==3.4.7
 colorama==0.4.6
 defusedxml==0.7.1
@@ -22,8 +21,6 @@ PyJWT==2.13.0
 python-dateutil==2.9.0.post0
 rich==15.0.0
 six==1.17.0
-soupsieve==2.8.4
 tabulate==0.10.0
-typing_extensions==4.15.0
 webencodings==0.5.1
 xmltodict==1.0.4
