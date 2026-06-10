@@ -1,14 +1,13 @@
 package com.pythonburp.console;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.atomic.AtomicLong;
 
 public final class ConsoleBuffer {
     private final int maxEvents;
-    private final ConcurrentLinkedDeque<ConsoleEvent> events = new ConcurrentLinkedDeque<>();
-    private final AtomicLong dropped = new AtomicLong();
+    private final ArrayDeque<ConsoleEvent> events = new ArrayDeque<>();
+    private long dropped;
 
     public ConsoleBuffer(int maxEvents) {
         if (maxEvents < 1) {
@@ -17,26 +16,21 @@ public final class ConsoleBuffer {
         this.maxEvents = maxEvents;
     }
 
-    public void append(ConsoleEventType type, String text) {
-        events.addLast(ConsoleEvent.now(type, text));
-        while (events.size() > maxEvents) {
-            ConsoleEvent removed = events.pollFirst();
-            if (removed != null) {
-                dropped.incrementAndGet();
-            }
+    public synchronized void append(ConsoleEventType type, String text) {
+        if (events.size() == maxEvents) {
+            events.removeFirst();
+            dropped++;
         }
+        events.addLast(ConsoleEvent.now(type, text));
     }
 
-    public List<ConsoleEvent> drain() {
-        List<ConsoleEvent> drained = new ArrayList<>();
-        ConsoleEvent event;
-        while ((event = events.pollFirst()) != null) {
-            drained.add(event);
-        }
+    public synchronized List<ConsoleEvent> drain() {
+        List<ConsoleEvent> drained = new ArrayList<>(events);
+        events.clear();
         return drained;
     }
 
-    public long droppedCount() {
-        return dropped.get();
+    public synchronized long droppedCount() {
+        return dropped;
     }
 }
