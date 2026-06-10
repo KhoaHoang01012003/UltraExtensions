@@ -1,0 +1,37 @@
+[
+  {
+    "name": "burp.crypto",
+    "version": "0.1.0",
+    "tier": "java-backed",
+    "nativeRequired": false,
+    "smokeTest": "from burp import crypto; print(crypto.sha256_hex(b'abc'))"
+  },
+  {
+    "name": "burp.encoder",
+    "version": "0.1.0",
+    "tier": "java-backed",
+    "nativeRequired": false,
+    "smokeTest": "from burp import encoder; print(encoder.base64_encode(b'abc'))"
+  },
+  {
+    "name": "beautifulsoup4",
+    "version": "locked-by-graalpy",
+    "tier": "pure-python",
+    "nativeRequired": false,
+    "smokeTest": "import bs4; print(bs4.__name__)"
+  },
+  {
+    "name": "html5lib",
+    "version": "locked-by-graalpy",
+    "tier": "pure-python",
+    "nativeRequired": false,
+    "smokeTest": "import html5lib; print(html5lib.__name__)"
+  },
+  {
+    "name": "pyjwt",
+    "version": "locked-by-graalpy",
+    "tier": "tested-graalpy",
+    "nativeRequired": false,
+    "smokeTest": "import jwt; print(jwt.__name__)"
+  }
+]
