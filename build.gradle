@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "com.pythonburp"
-version = "0.2.0"
+version = "0.2.1"
 
 ext {
     cpythonVersion = "3.12.10"
@@ -83,6 +83,7 @@ tasks.register("prepareCpythonBundle", Exec) {
     inputs.property("cpythonVersion", cpythonVersion)
     inputs.property("packages", packages)
     inputs.file("scripts/prepare-cpython-bundle.ps1")
+    inputs.dir("src/main/python-worker")
     outputs.dir(outputDir.map { it.dir("cpython/windows-x64") })
 
     commandLine(

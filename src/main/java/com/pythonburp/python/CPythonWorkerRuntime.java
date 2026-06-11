@@ -1,20 +1,32 @@
 package com.pythonburp.python;
 
+import com.pythonburp.bridge.BurpBridge;
+import com.pythonburp.bridge.HttpBridge;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 public final class CPythonWorkerRuntime implements PythonRuntime {
     private final CPythonWorkerCommand command;
     private final Path workingDirectory;
+    private final BurpBridge bridge;
 
     public CPythonWorkerRuntime(CPythonWorkerCommand command, Path workingDirectory) {
+        this(command, workingDirectory, new BurpBridge());
+    }
+
+    public CPythonWorkerRuntime(CPythonWorkerCommand command, Path workingDirectory, BurpBridge bridge) {
         this.command = Objects.requireNonNull(command, "command");
         this.workingDirectory = Objects.requireNonNull(workingDirectory, "workingDirectory").toAbsolutePath().normalize();
+        this.bridge = Objects.requireNonNull(bridge, "bridge");
     }
 
     @Override
@@ -27,16 +39,18 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
             Files.createDirectories(workingDirectory);
             script = Files.createTempFile(workingDirectory, "burp-python-", ".py");
             Files.writeString(script, source);
+            Path rpcDirectory = Files.createTempDirectory(workingDirectory, "rpc-");
 
-            Process process = new ProcessBuilder(command.commandFor(script))
-                .directory(workingDirectory.toFile())
-                .start();
+            ProcessBuilder builder = new ProcessBuilder(command.commandFor(script))
+                .directory(workingDirectory.toFile());
+            builder.environment().put("BURP_PYTHON_RPC_DIR", rpcDirectory.toString());
+            Process process = builder.start();
 
             ByteArrayOutputStream stdout = new ByteArrayOutputStream();
             ByteArrayOutputStream stderr = new ByteArrayOutputStream();
             Thread stdoutReader = reader(process.getInputStream(), stdout, "burp-python-cpython-stdout");
             Thread stderrReader = reader(process.getErrorStream(), stderr, "burp-python-cpython-stderr");
-            boolean finished = waitFor(process, timeout);
+            boolean finished = waitFor(process, timeout, rpcDirectory);
             if (!finished) {
                 process.destroyForcibly();
                 process.waitFor(5, TimeUnit.SECONDS);
@@ -72,11 +86,92 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
     public void close() {
     }
 
-    private static boolean waitFor(Process process, Duration timeout) throws InterruptedException {
+    private boolean waitFor(Process process, Duration timeout, Path rpcDirectory) throws InterruptedException, IOException {
         if (timeout.isZero() || timeout.isNegative()) {
-            return process.waitFor() >= 0;
+            while (process.isAlive()) {
+                dispatchRpcRequests(rpcDirectory);
+                Thread.sleep(25);
+            }
+            dispatchRpcRequests(rpcDirectory);
+            return true;
         }
-        return process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeout.toMillis());
+        while (process.isAlive() && System.nanoTime() < deadline) {
+            dispatchRpcRequests(rpcDirectory);
+            Thread.sleep(25);
+        }
+        dispatchRpcRequests(rpcDirectory);
+        return !process.isAlive();
+    }
+
+    private void dispatchRpcRequests(Path rpcDirectory) throws IOException {
+        try (var paths = Files.list(rpcDirectory)) {
+            for (Path request : paths
+                .filter(path -> path.getFileName().toString().endsWith(".request"))
+                .toList()) {
+                Path response = responsePath(request);
+                if (Files.exists(response)) {
+                    Files.deleteIfExists(request);
+                    continue;
+                }
+                Map<String, String> fields = readFields(request);
+                if (!"1".equals(fields.get("__end"))) {
+                    continue;
+                }
+                writeFields(response, dispatch(fields));
+                Files.deleteIfExists(request);
+            }
+        }
+    }
+
+    private Map<String, String> dispatch(Map<String, String> fields) {
+        String operation = fields.getOrDefault("operation", "");
+        if ("http.send".equals(operation)) {
+            HttpBridge.HttpResult result = bridge.http().send(
+                fields.getOrDefault("method", "GET"),
+                fields.getOrDefault("url", ""),
+                fields.getOrDefault("body", "")
+            );
+            Map<String, String> response = new LinkedHashMap<>();
+            response.put("ok", "true");
+            response.put("statusCode", Integer.toString(result.statusCode()));
+            response.put("body", result.body());
+            return response;
+        }
+        Map<String, String> response = new LinkedHashMap<>();
+        response.put("ok", "false");
+        response.put("error", "Unsupported RPC operation: " + operation);
+        return response;
+    }
+
+    private static Path responsePath(Path request) {
+        String name = request.getFileName().toString();
+        return request.resolveSibling(name.substring(0, name.length() - ".request".length()) + ".response");
+    }
+
+    private static Map<String, String> readFields(Path request) throws IOException {
+        Map<String, String> fields = new LinkedHashMap<>();
+        for (String line : Files.readAllLines(request, StandardCharsets.UTF_8)) {
+            if (!line.isEmpty() && line.charAt(0) == '\uFEFF') {
+                line = line.substring(1);
+            }
+            int equals = line.indexOf('=');
+            if (equals > 0) {
+                fields.put(line.substring(0, equals), line.substring(equals + 1));
+            }
+        }
+        return fields;
+    }
+
+    private static void writeFields(Path response, Map<String, String> fields) throws IOException {
+        StringBuilder builder = new StringBuilder();
+        for (Map.Entry<String, String> entry : fields.entrySet()) {
+            builder.append(entry.getKey())
+                .append('=')
+                .append(entry.getValue() == null ? "" : entry.getValue().replace("\r", "\\r").replace("\n", "\\n"))
+                .append(System.lineSeparator());
+        }
+        Files.writeString(response, builder.toString(), StandardCharsets.UTF_8);
     }
 
     private static Thread reader(java.io.InputStream input, ByteArrayOutputStream output, String name) {

@@ -11,7 +11,7 @@ Single-JAR Burp Suite extension that embeds a CPython worker runtime and provide
 The Burp-loadable JAR is:
 
 ```text
-build/libs/burp-python-ide-enhanced-0.2.0-all.jar
+build/libs/burp-python-ide-enhanced-0.2.1-all.jar
 ```
 
 ## Manual Burp Smoke Test
@@ -19,7 +19,7 @@ build/libs/burp-python-ide-enhanced-0.2.0-all.jar
 1. Open Burp Suite.
 2. Go to Extensions > Installed > Add.
 3. Select Extension type: Java.
-4. Select `build/libs/burp-python-ide-enhanced-0.2.0-all.jar`.
+4. Select `build/libs/burp-python-ide-enhanced-0.2.1-all.jar`.
 5. Confirm a `Python IDE` suite tab appears.
 6. Run:
 
@@ -36,3 +36,5 @@ print(crypto.sha256_hex(b"abc"))
 ## CPython Worker Runtime
 
 The build bundles CPython 3.12 for Windows x64 and a curated popular package set into the final JAR. At runtime the extension extracts that bundle into the extension cache and runs scripts in a separate Python worker process, so native package crashes do not crash Burp.
+
+`burp.http.send(method, url, body="")` is bridged back to Java/Montoya through the worker RPC channel.

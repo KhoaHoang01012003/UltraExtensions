@@ -45,7 +45,7 @@ public final class BurpPythonIdeTab extends JPanel {
         this.executors = executors;
         this.catalog = catalog;
         this.bridge = bridge;
-        this.scriptExecutor = new ScriptExecutor(executors, runtimeFactory);
+        this.scriptExecutor = new ScriptExecutor(executors, () -> runtimeFactory.get(bridge));
         this.packageCatalogPanel = new PackageCatalogPanel(catalog, this::runPackageDiagnostics);
 
         JButton run = new JButton("Run");
@@ -119,7 +119,7 @@ public final class BurpPythonIdeTab extends JPanel {
         packageCatalogPanel.markRunning();
         statusBar.setStatus("Checking packages");
         console.appendSystem("Running package diagnostics");
-        PackageDiagnosticsRunner runner = new PackageDiagnosticsRunner(runtimeFactory);
+        PackageDiagnosticsRunner runner = new PackageDiagnosticsRunner(() -> runtimeFactory.get(bridge));
         activeDiagnostics = executors.submitPackageTask(() -> {
             try {
                 List<PackageDiagnosticResult> results = runner.run(catalog, Duration.ofSeconds(30));

@@ -20,6 +20,10 @@ $ErrorActionPreference = "Stop"
 $runtimeDir = Join-Path $OutputDir "cpython\windows-x64"
 $marker = Join-Path $runtimeDir ".burp-python-cpython-bundle-ready"
 if (Test-Path $marker) {
+    $sitePackages = Join-Path $runtimeDir "Lib\site-packages"
+    if ((Test-Path $WorkerModulesDir) -and (Test-Path $sitePackages)) {
+        Copy-Item -Path (Join-Path $WorkerModulesDir "*") -Destination $sitePackages -Recurse -Force
+    }
     Write-Host "CPython bundle already prepared at $runtimeDir"
     exit 0
 }
