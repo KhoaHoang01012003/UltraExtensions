@@ -6,7 +6,7 @@
 
 **Architecture:** The extension is a Java/Montoya Burp extension with a Swing IDE, a background script executor, an embedded GraalPy runtime, an extension-managed cache for extracted resources, and Java-backed `burp.*` helper modules. The UI remains on Swing's Event Dispatch Thread while runtime startup, native extraction, imports, script execution, and heavy Burp operations run on background executors.
 
-**Tech Stack:** Java 21, Gradle, Montoya API 2026.4, GraalPy 25.0.3, Swing inheriting Burp's host Look and Feel, RSyntaxTextArea 3.6.0, JUnit 6.1.0, Bouncy Castle 1.84.
+**Tech Stack:** Java 21, Gradle, Montoya API 2026.4, GraalPy 25.0.3, Swing inheriting Burp's host Look and Feel, standard Swing text components, JUnit 6.1.0, Bouncy Castle 1.84.
 
 ---
 
@@ -172,7 +172,6 @@ dependencies {
     compileOnly "net.portswigger.burp.extensions:montoya-api:2026.4"
 
     implementation "org.graalvm.python:python-embedding:25.0.3"
-    implementation "com.fifesoft:rsyntaxtextarea:3.6.0"
     implementation "org.bouncycastle:bcprov-jdk18on:1.84"
     implementation "org.bouncycastle:bcpkix-jdk18on:1.84"
 

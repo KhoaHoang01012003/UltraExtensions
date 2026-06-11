@@ -495,7 +495,7 @@ Runtime size is also a risk. Bundling GraalPy and dependencies will produce a la
 
 - Implementation language: Java, because Burp's current extension examples and Montoya documentation are Java-first.
 - Python engine candidate: GraalPy 25.0.3, pinned during implementation unless smoke tests show a blocker.
-- UI toolkit: Swing inheriting Burp's host Look and Feel, RSyntaxTextArea for Python editing, and standard Swing split panes/tabs for layout.
+- UI toolkit: Swing inheriting Burp's host Look and Feel, standard `JTextArea` for the first stable Python editor, and standard Swing split panes/tabs for layout. Syntax highlighting can be reintroduced only after proving the editor remains editable inside Burp.
 - Responsiveness model: background `ExecutorService` for runtime, script, package, and Burp-data tasks; EDT only for Swing UI updates.
 - Default Windows cache path: `%LOCALAPPDATA%\BurpPythonIDE\cache\<extension-version>-<catalog-hash>\`.
 - First catalog scope: pentest scripting packages and Java-backed Burp helpers before data-science packages.

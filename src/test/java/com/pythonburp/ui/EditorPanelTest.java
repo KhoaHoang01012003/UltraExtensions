@@ -2,6 +2,7 @@ package com.pythonburp.ui;
 
 import org.junit.jupiter.api.Test;
 
+import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 import java.lang.reflect.InvocationTargetException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -32,6 +33,17 @@ final class EditorPanelTest {
         });
 
         assertTrue(ready.get());
+    }
+
+    @Test
+    void usesStandardSwingTextAreaForBurpHostCompatibility() throws Exception {
+        AtomicBoolean standardTextArea = new AtomicBoolean(false);
+        onEdt(() -> {
+            EditorPanel panel = new EditorPanel();
+            standardTextArea.set(panel.editorComponent() instanceof JTextArea);
+        });
+
+        assertTrue(standardTextArea.get());
     }
 
     private static void onEdt(Runnable runnable) throws InvocationTargetException, InterruptedException {
