@@ -5,6 +5,7 @@ import com.pythonburp.bridge.BurpBridge;
 import com.pythonburp.bridge.MontoyaHttpBridge;
 import com.pythonburp.catalog.PackageCatalog;
 import com.pythonburp.catalog.PackageCatalogLoader;
+import com.pythonburp.concurrency.Edt;
 import com.pythonburp.concurrency.IdeExecutors;
 import com.pythonburp.core.ExtensionContext;
 import com.pythonburp.core.VersionInfo;
@@ -22,8 +23,10 @@ public final class BurpPythonIdeExtension {
         this.context = initializedContext;
         PackageCatalog catalog = loadCatalog(api);
         BurpBridge bridge = new BurpBridge(new MontoyaHttpBridge(api));
-        BurpPythonIdeTab tab = new BurpPythonIdeTab(initializedContext.executors(), catalog, bridge);
-        api.userInterface().registerSuiteTab("Python IDE", tab);
+        Edt.runAndWait(() -> {
+            BurpPythonIdeTab tab = new BurpPythonIdeTab(initializedContext.executors(), catalog, bridge);
+            api.userInterface().registerSuiteTab("Python IDE", tab);
+        });
         api.extension().registerUnloadingHandler(() -> closeContext(initializedContext));
         api.logging().logToOutput(VersionInfo.EXTENSION_NAME + " " + VersionInfo.EXTENSION_VERSION + " loaded");
     }

@@ -11,7 +11,7 @@ Single-JAR Burp Suite extension that embeds GraalPy and provides a Python IDE fo
 The Burp-loadable JAR is:
 
 ```text
-build/libs/burp-python-ide-enhanced-0.1.0-all.jar
+build/libs/burp-python-ide-enhanced-0.1.1-all.jar
 ```
 
 ## Manual Burp Smoke Test
@@ -19,7 +19,7 @@ build/libs/burp-python-ide-enhanced-0.1.0-all.jar
 1. Open Burp Suite.
 2. Go to Extensions > Installed > Add.
 3. Select Extension type: Java.
-4. Select `build/libs/burp-python-ide-enhanced-0.1.0-all.jar`.
+4. Select `build/libs/burp-python-ide-enhanced-0.1.1-all.jar`.
 5. Confirm a `Python IDE` suite tab appears.
 6. Run:
 

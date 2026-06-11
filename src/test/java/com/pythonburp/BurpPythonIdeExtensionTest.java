@@ -9,6 +9,7 @@ import com.pythonburp.core.ExtensionContext;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.UIManager;
+import javax.swing.SwingUtilities;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -62,6 +63,16 @@ final class BurpPythonIdeExtensionTest {
         assertEquals(before, UIManager.getLookAndFeel());
     }
 
+    @Test
+    void createsAndRegistersSuiteTabOnEventDispatchThread() {
+        BurpPythonIdeExtension extension = new BurpPythonIdeExtension();
+        StubMontoyaApi stub = new StubMontoyaApi();
+
+        extension.initialize(stub.api());
+
+        assertTrue(stub.suiteTabRegisteredOnEdt);
+    }
+
     private static ExtensionContext contextFrom(BurpPythonIdeExtension extension) throws Exception {
         java.lang.reflect.Field field = BurpPythonIdeExtension.class.getDeclaredField("context");
         field.setAccessible(true);
@@ -74,6 +85,7 @@ final class BurpPythonIdeExtensionTest {
         private final Logging logging = proxy(Logging.class, this::handleLoggingCall);
         private final UserInterface userInterface = proxy(UserInterface.class, this::handleUserInterfaceCall);
         private final MontoyaApi api = proxy(MontoyaApi.class, this::handleApiCall);
+        private boolean suiteTabRegisteredOnEdt;
 
         MontoyaApi api() {
             return api;
@@ -100,6 +112,9 @@ final class BurpPythonIdeExtensionTest {
         }
 
         private Object handleUserInterfaceCall(Method method, Object[] args) {
+            if (method.getName().equals("registerSuiteTab")) {
+                suiteTabRegisteredOnEdt = SwingUtilities.isEventDispatchThread();
+            }
             return defaultValue(method.getReturnType());
         }
     }
