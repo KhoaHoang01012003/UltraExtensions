@@ -2,6 +2,9 @@ package com.pythonburp.ui;
 
 import com.pythonburp.bridge.BurpBridge;
 import com.pythonburp.catalog.PackageCatalog;
+import com.pythonburp.catalog.PackageDiagnosticResult;
+import com.pythonburp.catalog.PackageDiagnosticStatus;
+import com.pythonburp.catalog.PackageDiagnosticsRunner;
 import com.pythonburp.concurrency.Edt;
 import com.pythonburp.concurrency.IdeExecutors;
 import com.pythonburp.console.ConsoleEvent;
@@ -29,11 +32,20 @@ public final class BurpPythonIdeTab extends JPanel {
     private final ConsolePanel console = new ConsolePanel();
     private final StatusBar statusBar = new StatusBar();
     private final ScriptExecutor scriptExecutor;
+    private final IdeExecutors executors;
+    private final PackageCatalog catalog;
+    private final BurpBridge bridge;
+    private final PackageCatalogPanel packageCatalogPanel;
     private Future<ScriptRunResult> activeRun;
+    private Future<?> activeDiagnostics;
 
     public BurpPythonIdeTab(IdeExecutors executors, PackageCatalog catalog, BurpBridge bridge) {
         super(new BorderLayout());
+        this.executors = executors;
+        this.catalog = catalog;
+        this.bridge = bridge;
         this.scriptExecutor = new ScriptExecutor(executors, () -> new GraalPyPythonRuntime(bridge));
+        this.packageCatalogPanel = new PackageCatalogPanel(catalog, this::runPackageDiagnostics);
 
         JButton run = new JButton("Run");
         JButton stop = new JButton("Stop");
@@ -46,7 +58,7 @@ public final class BurpPythonIdeTab extends JPanel {
         toolbar.add(stop);
 
         JTabbedPane right = new JTabbedPane();
-        right.addTab("Packages", new PackageCatalogPanel(catalog));
+        right.addTab("Packages", packageCatalogPanel);
 
         JSplitPane center = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, editor, right);
         center.setResizeWeight(0.75);
@@ -95,6 +107,53 @@ public final class BurpPythonIdeTab extends JPanel {
             activeRun.cancel(true);
             statusBar.setStatus("Stopping");
         }
+    }
+
+    private void runPackageDiagnostics() {
+        Edt.requireEdt();
+        if (activeDiagnostics != null && !activeDiagnostics.isDone()) {
+            console.appendSystem("Package diagnostics already running");
+            return;
+        }
+        packageCatalogPanel.markRunning();
+        statusBar.setStatus("Checking packages");
+        console.appendSystem("Running package diagnostics");
+        PackageDiagnosticsRunner runner = new PackageDiagnosticsRunner(() -> new GraalPyPythonRuntime(bridge));
+        activeDiagnostics = executors.submitPackageTask(() -> {
+            try {
+                List<PackageDiagnosticResult> results = runner.run(catalog, Duration.ofSeconds(30));
+                Edt.runLater(() -> publishPackageDiagnostics(results));
+            } catch (Exception e) {
+                Edt.runLater(() -> publishPackageDiagnosticsFailure(e));
+            }
+        });
+    }
+
+    private void publishPackageDiagnostics(List<PackageDiagnosticResult> results) {
+        Edt.requireEdt();
+        activeDiagnostics = null;
+        packageCatalogPanel.updateDiagnostics(results);
+        long failed = results.stream()
+            .filter(result -> result.status() == PackageDiagnosticStatus.FAILED)
+            .count();
+        for (PackageDiagnosticResult result : results) {
+            if (result.status() == PackageDiagnosticStatus.FAILED) {
+                console.append(List.of(ConsoleEvent.now(
+                    ConsoleEventType.STDERR,
+                    result.entry().name() + " failed: " + result.errorMessage()
+                )));
+            }
+        }
+        statusBar.setStatus(failed == 0 ? "Packages OK" : "Package failures: " + failed);
+        console.appendSystem("Package diagnostics finished: " + (results.size() - failed) + " passed, " + failed + " failed");
+    }
+
+    private void publishPackageDiagnosticsFailure(Exception e) {
+        Edt.requireEdt();
+        activeDiagnostics = null;
+        statusBar.setStatus("Package diagnostics failed");
+        packageCatalogPanel.updateDiagnostics(List.of());
+        console.append(List.of(ConsoleEvent.now(ConsoleEventType.STDERR, "Package diagnostics failed: " + e)));
     }
 
     private void publishFailure(Future<ScriptRunResult> run, Exception e) {
