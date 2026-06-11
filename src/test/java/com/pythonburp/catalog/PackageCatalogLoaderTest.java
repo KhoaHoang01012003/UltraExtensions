@@ -47,6 +47,26 @@ final class PackageCatalogLoaderTest {
     }
 
     @Test
+    void parsesOptionalNativePackId() throws Exception {
+        PackageCatalog catalog = PackageCatalogLoader.parse("""
+            [
+              {
+                "name": "native-example",
+                "version": "1.0.0",
+                "tier": "native-candidate",
+                "nativeRequired": true,
+                "nativePack": "windows-x64-core",
+                "smokeTest": "import native_example"
+              }
+            ]
+            """);
+
+        PackageCatalogEntry entry = catalog.entries().get(0);
+        assertTrue(entry.nativeRequired());
+        assertEquals("windows-x64-core", entry.nativePackId().orElseThrow());
+    }
+
+    @Test
     void rejectsUnknownFields() {
         assertThrows(IOException.class, () -> PackageCatalogLoader.parse("""
             [

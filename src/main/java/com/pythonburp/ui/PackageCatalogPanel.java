@@ -27,7 +27,7 @@ public final class PackageCatalogPanel extends JPanel {
     public PackageCatalogPanel(PackageCatalog catalog, Runnable diagnosticsAction) {
         super(new BorderLayout());
         this.catalog = catalog;
-        String[] columns = {"Package", "Version", "Tier", "Native", "Status", "Details"};
+        String[] columns = {"Package", "Version", "Tier", "Native", "Native Pack", "Status", "Details"};
         this.model = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -65,7 +65,15 @@ public final class PackageCatalogPanel extends JPanel {
         PackageDiagnosticResult result = diagnostics.get(entry.name());
         PackageDiagnosticStatus status = result == null ? PackageDiagnosticStatus.NOT_RUN : result.status();
         String details = result == null ? "" : details(result);
-        return new Object[]{entry.name(), entry.version(), entry.tier(), entry.nativeRequired(), status, details};
+        return new Object[]{
+            entry.name(),
+            entry.version(),
+            entry.tier(),
+            entry.nativeRequired(),
+            entry.nativePackId().orElse(""),
+            status,
+            details
+        };
     }
 
     private void refreshRows() {
@@ -78,7 +86,15 @@ public final class PackageCatalogPanel extends JPanel {
     private void refreshRows(PackageDiagnosticStatus status, String details) {
         model.setRowCount(0);
         for (PackageCatalogEntry entry : catalog.entries()) {
-            model.addRow(new Object[]{entry.name(), entry.version(), entry.tier(), entry.nativeRequired(), status, details});
+            model.addRow(new Object[]{
+                entry.name(),
+                entry.version(),
+                entry.tier(),
+                entry.nativeRequired(),
+                entry.nativePackId().orElse(""),
+                status,
+                details
+            });
         }
     }
 

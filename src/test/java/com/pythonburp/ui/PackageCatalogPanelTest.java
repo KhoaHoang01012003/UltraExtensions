@@ -23,7 +23,14 @@ final class PackageCatalogPanelTest {
         AtomicReference<Object> secondDetails = new AtomicReference<>();
         onEdt(() -> {
             PackageCatalogEntry ok = new PackageCatalogEntry("ok", "1", "pure-python", false, "import ok");
-            PackageCatalogEntry bad = new PackageCatalogEntry("bad", "1", "native-candidate", true, "import bad");
+            PackageCatalogEntry bad = new PackageCatalogEntry(
+                "bad",
+                "1",
+                "native-candidate",
+                true,
+                java.util.Optional.of("windows-x64-core"),
+                "import bad"
+            );
             PackageCatalogPanel panel = new PackageCatalogPanel(new PackageCatalog(List.of(ok, bad)));
 
             panel.updateDiagnostics(List.of(
@@ -31,10 +38,10 @@ final class PackageCatalogPanelTest {
                 new PackageDiagnosticResult(bad, PackageDiagnosticStatus.FAILED, "", "", "boom")
             ));
             JTable table = findTable(panel);
-            firstStatus.set(table.getValueAt(0, 4));
-            secondStatus.set(table.getValueAt(1, 4));
-            firstDetails.set(table.getValueAt(0, 5));
-            secondDetails.set(table.getValueAt(1, 5));
+            firstStatus.set(table.getValueAt(0, 5));
+            secondStatus.set(table.getValueAt(1, 5));
+            firstDetails.set(table.getValueAt(0, 6));
+            secondDetails.set(table.getValueAt(1, 6));
         });
 
         assertEquals(PackageDiagnosticStatus.PASSED, firstStatus.get());
@@ -54,12 +61,32 @@ final class PackageCatalogPanelTest {
             panel.markRunning();
 
             JTable table = findTable(panel);
-            status.set(table.getValueAt(0, 4));
-            details.set(table.getValueAt(0, 5));
+            status.set(table.getValueAt(0, 5));
+            details.set(table.getValueAt(0, 6));
         });
 
         assertEquals(PackageDiagnosticStatus.RUNNING, status.get());
         assertEquals("Running smoke tests", details.get());
+    }
+
+    @Test
+    void showsNativePackIdWhenPresent() throws Exception {
+        AtomicReference<Object> nativePack = new AtomicReference<>();
+        onEdt(() -> {
+            PackageCatalogEntry entry = new PackageCatalogEntry(
+                "native-pkg",
+                "1",
+                "native-candidate",
+                true,
+                java.util.Optional.of("windows-x64-core"),
+                "import native_pkg"
+            );
+            PackageCatalogPanel panel = new PackageCatalogPanel(new PackageCatalog(List.of(entry)));
+
+            nativePack.set(findTable(panel).getValueAt(0, 4));
+        });
+
+        assertEquals("windows-x64-core", nativePack.get());
     }
 
     private static JTable findTable(PackageCatalogPanel panel) {

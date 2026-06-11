@@ -1,4 +1,4 @@
-package com.pythonburp.catalog;
+package com.pythonburp.nativepack;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -6,35 +6,34 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 
-public final class PackageCatalogLoader {
-    private static final String RESOURCE_PATH = "/package-catalog.json";
+public final class NativePackManifestLoader {
+    private static final String RESOURCE_PATH = "/native-pack-manifest.json";
 
-    private PackageCatalogLoader() {
+    private NativePackManifestLoader() {
     }
 
-    public static PackageCatalog loadBundled() throws IOException {
-        InputStream stream = PackageCatalogLoader.class.getResourceAsStream(RESOURCE_PATH);
+    public static NativePackManifest loadBundled() throws IOException {
+        InputStream stream = NativePackManifestLoader.class.getResourceAsStream(RESOURCE_PATH);
         if (stream == null) {
-            throw new IOException("Missing bundled package catalog resource " + RESOURCE_PATH);
+            throw new IOException("Missing bundled native pack manifest resource " + RESOURCE_PATH);
         }
         try (stream) {
             return parse(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
         }
     }
 
-    static PackageCatalog parse(String json) throws IOException {
+    static NativePackManifest parse(String json) throws IOException {
         Objects.requireNonNull(json, "json");
         Cursor cursor = new Cursor(json);
         cursor.skipWhitespace();
         cursor.expect('[');
 
-        List<PackageCatalogEntry> entries = new ArrayList<>();
+        List<NativePackResource> resources = new ArrayList<>();
         cursor.skipWhitespace();
         if (cursor.peek() != ']') {
             while (true) {
-                entries.add(parseEntry(cursor));
+                resources.add(parseResource(cursor));
                 cursor.skipWhitespace();
                 char next = cursor.peek();
                 if (next == ',') {
@@ -44,26 +43,26 @@ public final class PackageCatalogLoader {
                 if (next == ']') {
                     break;
                 }
-                throw cursor.error("Expected ',' or ']' after catalog entry");
+                throw cursor.error("Expected ',' or ']' after native pack resource");
             }
         }
 
         cursor.expect(']');
         cursor.skipWhitespace();
         cursor.ensureEnd();
-        return new PackageCatalog(List.copyOf(entries));
+        return new NativePackManifest(resources);
     }
 
-    private static PackageCatalogEntry parseEntry(Cursor cursor) throws IOException {
+    private static NativePackResource parseResource(Cursor cursor) throws IOException {
         cursor.skipWhitespace();
         cursor.expect('{');
 
-        String name = null;
-        String version = null;
-        String tier = null;
-        Boolean nativeRequired = null;
-        String nativePack = null;
-        String smokeTest = null;
+        String packId = null;
+        String os = null;
+        String arch = null;
+        String resourcePath = null;
+        String targetPath = null;
+        String sha256 = null;
 
         cursor.skipWhitespace();
         if (cursor.peek() != '}') {
@@ -74,13 +73,13 @@ public final class PackageCatalogLoader {
                 cursor.expect(':');
                 cursor.skipWhitespace();
                 switch (key) {
-                    case "name" -> name = cursor.readStringValue();
-                    case "version" -> version = cursor.readStringValue();
-                    case "tier" -> tier = cursor.readStringValue();
-                    case "nativeRequired" -> nativeRequired = cursor.readBooleanValue("nativeRequired");
-                    case "nativePack" -> nativePack = cursor.readStringValue();
-                    case "smokeTest" -> smokeTest = cursor.readStringValue();
-                    default -> throw cursor.error("Unknown catalog field '" + key + "'");
+                    case "packId" -> packId = cursor.readStringValue();
+                    case "os" -> os = cursor.readStringValue();
+                    case "arch" -> arch = cursor.readStringValue();
+                    case "resourcePath" -> resourcePath = cursor.readStringValue();
+                    case "targetPath" -> targetPath = cursor.readStringValue();
+                    case "sha256" -> sha256 = cursor.readStringValue();
+                    default -> throw cursor.error("Unknown native pack field '" + key + "'");
                 }
 
                 cursor.skipWhitespace();
@@ -92,17 +91,17 @@ public final class PackageCatalogLoader {
                 if (next == '}') {
                     break;
                 }
-                throw cursor.error("Expected ',' or '}' after catalog field");
+                throw cursor.error("Expected ',' or '}' after native pack field");
             }
         }
 
         cursor.expect('}');
 
-        if (name == null || version == null || tier == null || nativeRequired == null || smokeTest == null) {
-            throw cursor.error("Catalog entry is missing one or more required fields");
+        if (packId == null || os == null || arch == null || resourcePath == null || targetPath == null || sha256 == null) {
+            throw cursor.error("Native pack resource is missing one or more required fields");
         }
 
-        return new PackageCatalogEntry(name, version, tier, nativeRequired, Optional.ofNullable(nativePack), smokeTest);
+        return new NativePackResource(packId, os, arch, resourcePath, targetPath, sha256);
     }
 
     private static final class Cursor {
@@ -172,18 +171,6 @@ public final class PackageCatalogLoader {
             return readString();
         }
 
-        private boolean readBooleanValue(String fieldName) throws IOException {
-            if (source.startsWith("true", index)) {
-                index += 4;
-                return true;
-            }
-            if (source.startsWith("false", index)) {
-                index += 5;
-                return false;
-            }
-            throw error("Field '" + fieldName + "' must be a boolean");
-        }
-
         private char readUnicodeEscape() throws IOException {
             if (index + 4 > source.length()) {
                 throw error("Incomplete unicode escape");
@@ -202,7 +189,7 @@ public final class PackageCatalogLoader {
 
         private void ensureEnd() throws IOException {
             if (index != source.length()) {
-                throw error("Unexpected trailing content in catalog JSON");
+                throw error("Unexpected trailing content in native pack manifest JSON");
             }
         }
 
