@@ -17,6 +17,7 @@ import javax.swing.JPanel;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JToolBar;
+import javax.swing.SwingUtilities;
 import java.awt.BorderLayout;
 import java.time.Duration;
 import java.util.List;
@@ -56,6 +57,12 @@ public final class BurpPythonIdeTab extends JPanel {
         add(toolbar, BorderLayout.NORTH);
         add(main, BorderLayout.CENTER);
         add(statusBar, BorderLayout.SOUTH);
+    }
+
+    @Override
+    public void addNotify() {
+        super.addNotify();
+        SwingUtilities.invokeLater(editor::focusEditor);
     }
 
     private void runScript() {
