@@ -15,16 +15,18 @@ final class PackageCatalogLoaderTest {
     void loadsBundledCatalog() throws Exception {
         PackageCatalog catalog = PackageCatalogLoader.loadBundled();
 
-        assertEquals(4, catalog.entries().size());
+        assertTrue(catalog.entries().size() >= 20);
 
         Map<String, PackageCatalogEntry> entries = catalog.entries().stream()
             .collect(Collectors.toMap(PackageCatalogEntry::name, entry -> entry));
 
         assertTrue(entries.containsKey("burp.crypto"));
-        assertEquals("java-backed", entries.get("burp.crypto").tier());
-        assertEquals("0.1.0", entries.get("burp.encoder").version());
-        assertEquals("locked-by-graalpy", entries.get("html5lib").version());
-        assertEquals("tested-graalpy", entries.get("pyjwt").tier());
+        assertEquals("python-worker", entries.get("burp.crypto").tier());
+        assertEquals("0.2.0", entries.get("burp.encoder").version());
+        assertEquals("bundled-cpython", entries.get("html5lib").version());
+        assertEquals("cpython-wheel", entries.get("pyjwt").tier());
+        assertEquals("cpython-native-wheel", entries.get("cryptography").tier());
+        assertTrue(entries.get("numpy").nativeRequired());
         assertTrue(entries.get("pyjwt").smokeTest().contains("import jwt"));
     }
 

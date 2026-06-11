@@ -1,30 +1,156 @@
 [
   {
     "name": "burp.crypto",
-    "version": "0.1.0",
-    "tier": "java-backed",
+    "version": "0.2.0",
+    "tier": "python-worker",
     "nativeRequired": false,
     "smokeTest": "from burp import crypto; print(crypto.sha256_hex(b'abc'))"
   },
   {
     "name": "burp.encoder",
-    "version": "0.1.0",
-    "tier": "java-backed",
+    "version": "0.2.0",
+    "tier": "python-worker",
     "nativeRequired": false,
     "smokeTest": "from burp import encoder; print(encoder.base64_encode(b'abc'))"
   },
   {
+    "name": "requests",
+    "version": "bundled-cpython",
+    "tier": "cpython-wheel",
+    "nativeRequired": false,
+    "smokeTest": "import requests; print(requests.__name__)"
+  },
+  {
+    "name": "httpx",
+    "version": "bundled-cpython",
+    "tier": "cpython-wheel",
+    "nativeRequired": false,
+    "smokeTest": "import httpx; print(httpx.__name__)"
+  },
+  {
+    "name": "beautifulsoup4",
+    "version": "bundled-cpython",
+    "tier": "cpython-wheel",
+    "nativeRequired": false,
+    "smokeTest": "import bs4; print(bs4.__name__)"
+  },
+  {
     "name": "html5lib",
-    "version": "locked-by-graalpy",
-    "tier": "pure-python",
+    "version": "bundled-cpython",
+    "tier": "cpython-wheel",
     "nativeRequired": false,
     "smokeTest": "import html5lib; print(html5lib.__name__)"
   },
   {
+    "name": "lxml",
+    "version": "bundled-cpython",
+    "tier": "cpython-native-wheel",
+    "nativeRequired": true,
+    "smokeTest": "import lxml.etree as etree; print(etree.LXML_VERSION)"
+  },
+  {
+    "name": "PyYAML",
+    "version": "bundled-cpython",
+    "tier": "cpython-native-wheel",
+    "nativeRequired": true,
+    "smokeTest": "import yaml; print(yaml.__name__)"
+  },
+  {
     "name": "pyjwt",
-    "version": "locked-by-graalpy",
-    "tier": "tested-graalpy",
+    "version": "bundled-cpython",
+    "tier": "cpython-wheel",
     "nativeRequired": false,
     "smokeTest": "import jwt; print(jwt.__name__)"
+  },
+  {
+    "name": "cryptography",
+    "version": "bundled-cpython",
+    "tier": "cpython-native-wheel",
+    "nativeRequired": true,
+    "smokeTest": "import cryptography; print(cryptography.__name__)"
+  },
+  {
+    "name": "pycryptodome",
+    "version": "bundled-cpython",
+    "tier": "cpython-native-wheel",
+    "nativeRequired": true,
+    "smokeTest": "import Crypto; print(Crypto.__name__)"
+  },
+  {
+    "name": "dnspython",
+    "version": "bundled-cpython",
+    "tier": "cpython-wheel",
+    "nativeRequired": false,
+    "smokeTest": "import dns; print(dns.__name__)"
+  },
+  {
+    "name": "aiohttp",
+    "version": "bundled-cpython",
+    "tier": "cpython-native-wheel",
+    "nativeRequired": true,
+    "smokeTest": "import aiohttp; print(aiohttp.__name__)"
+  },
+  {
+    "name": "pydantic",
+    "version": "bundled-cpython",
+    "tier": "cpython-native-wheel",
+    "nativeRequired": true,
+    "smokeTest": "import pydantic; print(pydantic.__name__)"
+  },
+  {
+    "name": "orjson",
+    "version": "bundled-cpython",
+    "tier": "cpython-native-wheel",
+    "nativeRequired": true,
+    "smokeTest": "import orjson; print(orjson.__name__)"
+  },
+  {
+    "name": "zstandard",
+    "version": "bundled-cpython",
+    "tier": "cpython-native-wheel",
+    "nativeRequired": true,
+    "smokeTest": "import zstandard; print(zstandard.__name__)"
+  },
+  {
+    "name": "pillow",
+    "version": "bundled-cpython",
+    "tier": "cpython-native-wheel",
+    "nativeRequired": true,
+    "smokeTest": "import PIL; print(PIL.__name__)"
+  },
+  {
+    "name": "numpy",
+    "version": "bundled-cpython",
+    "tier": "cpython-native-wheel",
+    "nativeRequired": true,
+    "smokeTest": "import numpy; print(numpy.__name__)"
+  },
+  {
+    "name": "pandas",
+    "version": "bundled-cpython",
+    "tier": "cpython-native-wheel",
+    "nativeRequired": true,
+    "smokeTest": "import pandas; print(pandas.__name__)"
+  },
+  {
+    "name": "scipy",
+    "version": "bundled-cpython",
+    "tier": "cpython-native-wheel",
+    "nativeRequired": true,
+    "smokeTest": "import scipy; print(scipy.__name__)"
+  },
+  {
+    "name": "scapy",
+    "version": "bundled-cpython",
+    "tier": "cpython-wheel",
+    "nativeRequired": false,
+    "smokeTest": "import scapy; print(scapy.__name__)"
+  },
+  {
+    "name": "parsel",
+    "version": "bundled-cpython",
+    "tier": "cpython-wheel",
+    "nativeRequired": false,
+    "smokeTest": "import parsel; print(parsel.__name__)"
   }
 ]

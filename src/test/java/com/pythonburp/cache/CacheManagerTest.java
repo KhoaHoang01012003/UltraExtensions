@@ -21,7 +21,7 @@ final class CacheManagerTest {
 
     @Test
     void cachePathIncludesVersionAndHash() throws Exception {
-        CacheKey key = new CacheKey("0.1.0", "25.0.3", "windows", "amd64", "abc123");
+        CacheKey key = new CacheKey("0.1.0", "3.12.10", "windows", "amd64", "abc123");
         CacheManager manager = new CacheManager(tempDir);
 
         Path path = manager.prepareCache(key);
@@ -33,7 +33,7 @@ final class CacheManagerTest {
 
     @Test
     void writeVerifiedWritesFileAndVerifiesSha256() throws Exception {
-        CacheKey key = new CacheKey("0.1.0", "25.0.3", "windows", "amd64", "hash");
+        CacheKey key = new CacheKey("0.1.0", "3.12.10", "windows", "amd64", "hash");
         CacheManager manager = new CacheManager(tempDir);
         Path cache = manager.prepareCache(key);
         byte[] content = "hello".getBytes(StandardCharsets.UTF_8);
@@ -46,7 +46,7 @@ final class CacheManagerTest {
 
     @Test
     void writeVerifiedRejectsSha256Mismatch() throws Exception {
-        CacheKey key = new CacheKey("0.1.0", "25.0.3", "windows", "amd64", "hash");
+        CacheKey key = new CacheKey("0.1.0", "3.12.10", "windows", "amd64", "hash");
         CacheManager manager = new CacheManager(tempDir);
         Path cache = manager.prepareCache(key);
 
@@ -56,7 +56,7 @@ final class CacheManagerTest {
 
     @Test
     void writeVerifiedRejectsParentDirectoryEscape() throws Exception {
-        CacheKey key = new CacheKey("0.1.0", "25.0.3", "windows", "amd64", "hash");
+        CacheKey key = new CacheKey("0.1.0", "3.12.10", "windows", "amd64", "hash");
         CacheManager manager = new CacheManager(tempDir);
         Path cache = manager.prepareCache(key);
         byte[] content = "hello".getBytes(StandardCharsets.UTF_8);
@@ -68,7 +68,7 @@ final class CacheManagerTest {
 
     @Test
     void writeVerifiedRejectsAbsolutePath() throws Exception {
-        CacheKey key = new CacheKey("0.1.0", "25.0.3", "windows", "amd64", "hash");
+        CacheKey key = new CacheKey("0.1.0", "3.12.10", "windows", "amd64", "hash");
         CacheManager manager = new CacheManager(tempDir);
         Path cache = manager.prepareCache(key);
         byte[] content = "hello".getBytes(StandardCharsets.UTF_8);
@@ -93,7 +93,7 @@ final class CacheManagerTest {
 
     @Test
     void writeVerifiedDoesNotCreateDirectoriesThroughSymlinkAncestor() throws Exception {
-        CacheKey key = new CacheKey("0.1.0", "25.0.3", "windows", "amd64", "hash");
+        CacheKey key = new CacheKey("0.1.0", "3.12.10", "windows", "amd64", "hash");
         CacheManager manager = new CacheManager(tempDir);
         Path cache = manager.prepareCache(key);
         Path outside = tempDir.resolve("outside");
@@ -110,7 +110,7 @@ final class CacheManagerTest {
 
     @Test
     void writeVerifiedReplacesHardLinkWithoutMutatingOutsideTarget() throws Exception {
-        CacheKey key = new CacheKey("0.1.0", "25.0.3", "windows", "amd64", "hash");
+        CacheKey key = new CacheKey("0.1.0", "3.12.10", "windows", "amd64", "hash");
         CacheManager manager = new CacheManager(tempDir);
         Path cache = manager.prepareCache(key);
         Path outsideFile = tempDir.resolve("outside-source.txt");
@@ -128,8 +128,8 @@ final class CacheManagerTest {
 
     @Test
     void directoryNameKeepsDistinctRawKeysFromCollapsing() {
-        CacheKey punctuation = new CacheKey("0.1.0", "25.0.3", "windows", "amd64", "a/b");
-        CacheKey space = new CacheKey("0.1.0", "25.0.3", "windows", "amd64", "a b");
+        CacheKey punctuation = new CacheKey("0.1.0", "3.12.10", "windows", "amd64", "a/b");
+        CacheKey space = new CacheKey("0.1.0", "3.12.10", "windows", "amd64", "a b");
 
         assertNotEquals(punctuation.directoryName(), space.directoryName());
     }

@@ -1,7 +1,6 @@
 package com.pythonburp.catalog;
 
-import com.pythonburp.bridge.BurpBridge;
-import com.pythonburp.python.GraalPyPythonRuntime;
+import com.pythonburp.python.CPythonRuntimeFactory;
 import com.pythonburp.python.PythonRuntime;
 import com.pythonburp.python.ScriptRunResult;
 import com.pythonburp.python.ScriptStatus;
@@ -16,7 +15,7 @@ final class PackageSmokeTest {
     void bundledSmokeTestsPass() throws Exception {
         PackageCatalog catalog = PackageCatalogLoader.loadBundled();
         StringBuilder failures = new StringBuilder();
-        try (PythonRuntime runtime = new GraalPyPythonRuntime(new BurpBridge())) {
+        try (PythonRuntime runtime = new CPythonRuntimeFactory().get()) {
             for (PackageCatalogEntry entry : catalog.entries()) {
                 ScriptRunResult result = runtime.execute(entry.smokeTest(), Duration.ofSeconds(30));
                 if (result.status() != ScriptStatus.SUCCEEDED) {

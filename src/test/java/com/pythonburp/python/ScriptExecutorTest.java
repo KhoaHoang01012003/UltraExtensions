@@ -1,6 +1,5 @@
 package com.pythonburp.python;
 
-import com.pythonburp.bridge.BurpBridge;
 import com.pythonburp.concurrency.IdeExecutors;
 import org.junit.jupiter.api.Test;
 
@@ -15,7 +14,16 @@ final class ScriptExecutorTest {
     @Test
     void runReturnsImmediatelyWithFuture() throws Exception {
         try (IdeExecutors executors = new IdeExecutors(1)) {
-            ScriptExecutor scriptExecutor = new ScriptExecutor(executors, () -> new GraalPyPythonRuntime(new BurpBridge()));
+            ScriptExecutor scriptExecutor = new ScriptExecutor(executors, () -> new PythonRuntime() {
+                @Override
+                public ScriptRunResult execute(String source, Duration timeout) {
+                    return ScriptRunResult.succeeded("ok", "");
+                }
+
+                @Override
+                public void close() {
+                }
+            });
             ScriptRunRequest request = new ScriptRunRequest("print('ok')", Duration.ofSeconds(10));
 
             Future<ScriptRunResult> future = scriptExecutor.run(request);

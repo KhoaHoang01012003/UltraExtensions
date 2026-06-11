@@ -9,14 +9,14 @@ import java.util.Objects;
 
 public record CacheKey(
     String extensionVersion,
-    String graalPyVersion,
+    String runtimeVersion,
     String os,
     String arch,
     String catalogHash
 ) {
     public CacheKey {
         Objects.requireNonNull(extensionVersion, "extensionVersion");
-        Objects.requireNonNull(graalPyVersion, "graalPyVersion");
+        Objects.requireNonNull(runtimeVersion, "runtimeVersion");
         Objects.requireNonNull(os, "os");
         Objects.requireNonNull(arch, "arch");
         Objects.requireNonNull(catalogHash, "catalogHash");
@@ -24,7 +24,7 @@ public record CacheKey(
 
     public String directoryName() {
         String identity = rawIdentity();
-        return sanitize(extensionVersion + "-" + graalPyVersion + "-" + os + "-" + arch + "-" + catalogHash)
+        return sanitize(extensionVersion + "-" + runtimeVersion + "-" + os + "-" + arch + "-" + catalogHash)
             + "-" + shortHash(identity);
     }
 
@@ -33,7 +33,7 @@ public record CacheKey(
     }
 
     private String rawIdentity() {
-        return String.join("\u001F", extensionVersion, graalPyVersion, os, arch, catalogHash);
+        return String.join("\u001F", extensionVersion, runtimeVersion, os, arch, catalogHash);
     }
 
     private static String shortHash(String value) {

@@ -9,7 +9,7 @@ import com.pythonburp.concurrency.Edt;
 import com.pythonburp.concurrency.IdeExecutors;
 import com.pythonburp.console.ConsoleEvent;
 import com.pythonburp.console.ConsoleEventType;
-import com.pythonburp.python.GraalPyPythonRuntime;
+import com.pythonburp.python.CPythonRuntimeFactory;
 import com.pythonburp.python.ScriptExecutor;
 import com.pythonburp.python.ScriptRunRequest;
 import com.pythonburp.python.ScriptRunResult;
@@ -36,6 +36,7 @@ public final class BurpPythonIdeTab extends JPanel {
     private final PackageCatalog catalog;
     private final BurpBridge bridge;
     private final PackageCatalogPanel packageCatalogPanel;
+    private final CPythonRuntimeFactory runtimeFactory = new CPythonRuntimeFactory();
     private Future<ScriptRunResult> activeRun;
     private Future<?> activeDiagnostics;
 
@@ -44,7 +45,7 @@ public final class BurpPythonIdeTab extends JPanel {
         this.executors = executors;
         this.catalog = catalog;
         this.bridge = bridge;
-        this.scriptExecutor = new ScriptExecutor(executors, () -> new GraalPyPythonRuntime(bridge));
+        this.scriptExecutor = new ScriptExecutor(executors, runtimeFactory);
         this.packageCatalogPanel = new PackageCatalogPanel(catalog, this::runPackageDiagnostics);
 
         JButton run = new JButton("Run");
@@ -118,7 +119,7 @@ public final class BurpPythonIdeTab extends JPanel {
         packageCatalogPanel.markRunning();
         statusBar.setStatus("Checking packages");
         console.appendSystem("Running package diagnostics");
-        PackageDiagnosticsRunner runner = new PackageDiagnosticsRunner(() -> new GraalPyPythonRuntime(bridge));
+        PackageDiagnosticsRunner runner = new PackageDiagnosticsRunner(runtimeFactory);
         activeDiagnostics = executors.submitPackageTask(() -> {
             try {
                 List<PackageDiagnosticResult> results = runner.run(catalog, Duration.ofSeconds(30));

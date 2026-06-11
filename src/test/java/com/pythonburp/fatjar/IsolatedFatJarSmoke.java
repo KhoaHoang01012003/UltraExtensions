@@ -20,20 +20,20 @@ public final class IsolatedFatJarSmoke {
             new URL[]{jar.toUri().toURL()},
             ClassLoader.getPlatformClassLoader()
         )) {
-            Class<?> bridgeClass = Class.forName("com.pythonburp.bridge.BurpBridge", true, loader);
-            Object bridge = bridgeClass.getConstructor().newInstance();
-            Class<?> runtimeClass = Class.forName("com.pythonburp.python.GraalPyPythonRuntime", true, loader);
-            Object runtime = runtimeClass.getConstructor(bridgeClass).newInstance(bridge);
+            Class<?> factoryClass = Class.forName("com.pythonburp.python.CPythonRuntimeFactory", true, loader);
+            Object factory = factoryClass.getConstructor().newInstance();
+            Object runtime = factoryClass.getMethod("get").invoke(factory);
+            Class<?> runtimeClass = runtime.getClass();
             Method execute = runtimeClass.getMethod("execute", String.class, Duration.class);
 
-            Object result = execute.invoke(runtime, "print('hello isolated fat jar')", Duration.ofSeconds(15));
+            Object result = execute.invoke(runtime, "import jwt\nprint('hello isolated cpython fat jar')", Duration.ofSeconds(30));
             Object status = result.getClass().getMethod("status").invoke(result);
             Object stdout = result.getClass().getMethod("stdout").invoke(result);
             Object error = result.getClass().getMethod("errorMessage").invoke(result);
             if (!"SUCCEEDED".equals(status.toString())) {
                 throw new AssertionError("Fat JAR smoke failed: " + error);
             }
-            if (!stdout.toString().contains("hello isolated fat jar")) {
+            if (!stdout.toString().contains("hello isolated cpython fat jar")) {
                 throw new AssertionError("Fat JAR smoke stdout missing expected output: " + stdout);
             }
         }

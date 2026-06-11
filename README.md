@@ -1,6 +1,6 @@
 # Burp Python IDE Enhanced
 
-Single-JAR Burp Suite extension that embeds GraalPy and provides a Python IDE for pentest scripting.
+Single-JAR Burp Suite extension that embeds a CPython worker runtime and provides a Python IDE for pentest scripting.
 
 ## Build
 
@@ -11,7 +11,7 @@ Single-JAR Burp Suite extension that embeds GraalPy and provides a Python IDE fo
 The Burp-loadable JAR is:
 
 ```text
-build/libs/burp-python-ide-enhanced-0.1.4-all.jar
+build/libs/burp-python-ide-enhanced-0.2.0-all.jar
 ```
 
 ## Manual Burp Smoke Test
@@ -19,7 +19,7 @@ build/libs/burp-python-ide-enhanced-0.1.4-all.jar
 1. Open Burp Suite.
 2. Go to Extensions > Installed > Add.
 3. Select Extension type: Java.
-4. Select `build/libs/burp-python-ide-enhanced-0.1.4-all.jar`.
+4. Select `build/libs/burp-python-ide-enhanced-0.2.0-all.jar`.
 5. Confirm a `Python IDE` suite tab appears.
 6. Run:
 
@@ -33,6 +33,6 @@ print(crypto.sha256_hex(b"abc"))
 7. Confirm the console prints `YWJj` and the SHA-256 hash.
 8. While the script runs, switch Burp tabs and confirm Burp remains responsive.
 
-## Native Package Pipeline
+## CPython Worker Runtime
 
-Native packages are added through curated native packs, not live `pip install` inside Burp. A native pack declares its packaged resources in `native-pack-manifest.json`, links catalog entries through `nativePack`, and extracts files into the extension cache with SHA-256 verification before runtime import tests mark the package supported.
+The build bundles CPython 3.12 for Windows x64 and a curated popular package set into the final JAR. At runtime the extension extracts that bundle into the extension cache and runs scripts in a separate Python worker process, so native package crashes do not crash Burp.
