@@ -55,6 +55,7 @@ public final class GraalPyPythonRuntime implements PythonRuntime {
             .resourceLoadingClass(GraalPyPythonRuntime.class)
             .build();
              Context context = GraalPyResources.contextBuilder(fileSystem)
+                 .options(GraalPyContextOptions.DEFAULTS)
                  .allowAllAccess(true)
                  .allowIO(IOAccess.ALL)
                  .currentWorkingDirectory(WORKING_DIRECTORY)
