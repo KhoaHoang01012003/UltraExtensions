@@ -25,4 +25,13 @@ public record CPythonWorkerCommand(List<String> commandPrefix) {
         command.add(script.toString());
         return List.copyOf(command);
     }
+
+    List<String> commandFor(Path launcher, Path script) {
+        Objects.requireNonNull(launcher, "launcher");
+        Objects.requireNonNull(script, "script");
+        List<String> command = new ArrayList<>(commandPrefix);
+        command.add(launcher.toString());
+        command.add(script.toString());
+        return List.copyOf(command);
+    }
 }

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import javax.swing.AbstractButton;
 import javax.swing.JComponent;
 import javax.swing.JTable;
+import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
 import java.awt.Component;
 import java.awt.Container;
@@ -38,12 +39,17 @@ final class BurpPythonIdeTabTest {
     }
 
     @Test
-    void packageDiagnosticPanelIsNotShownInMainIde() throws Exception {
-        AtomicBoolean hasPackagePanel = new AtomicBoolean(true);
+    void containsEditorAndPackageManagerWorkspaceTabs() throws Exception {
+        AtomicBoolean hasWorkspaces = new AtomicBoolean(false);
 
-        onEdt(() -> hasPackagePanel.set(containsComponentType(newTab(), JTable.class)));
+        onEdt(() -> {
+            JTabbedPane tabs = findTabbedPane(newTab());
+            hasWorkspaces.set(tabs != null
+                && tabs.indexOfTab("Editor") >= 0
+                && tabs.indexOfTab("Package Manager") >= 0);
+        });
 
-        assertFalse(hasPackagePanel.get());
+        assertTrue(hasWorkspaces.get());
     }
 
     private static BurpPythonIdeTab newTab() {
@@ -68,6 +74,17 @@ final class BurpPythonIdeTabTest {
             }
         });
         return found.get();
+    }
+
+    private static JTabbedPane findTabbedPane(Container root) {
+        if (root instanceof JTabbedPane tabs) return tabs;
+        for (Component child : root.getComponents()) {
+            if (child instanceof Container container) {
+                JTabbedPane found = findTabbedPane(container);
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 
     private static void visit(Component component, java.util.function.Consumer<Component> visitor) {

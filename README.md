@@ -11,7 +11,7 @@ Single-JAR Burp Suite extension that embeds a CPython worker runtime and provide
 The Burp-loadable JAR is:
 
 ```text
-build/libs/burp-python-ide-enhanced-0.2.1-all.jar
+build/libs/burp-python-ide-enhanced-0.3.0-all.jar
 ```
 
 ## Manual Burp Smoke Test
@@ -19,7 +19,7 @@ build/libs/burp-python-ide-enhanced-0.2.1-all.jar
 1. Open Burp Suite.
 2. Go to Extensions > Installed > Add.
 3. Select Extension type: Java.
-4. Select `build/libs/burp-python-ide-enhanced-0.2.1-all.jar`.
+4. Select `build/libs/burp-python-ide-enhanced-0.3.0-all.jar`.
 5. Confirm a `Python IDE` suite tab appears.
 6. Confirm the toolbar shows `Load`, `Save As`, `Run`, `Stop`, and `Clear Log`.
 7. Run:
@@ -35,6 +35,31 @@ print(crypto.sha256_hex(b"abc"))
 9. Click `Clear Log` and confirm the console clears.
 10. Use `Save As` to save the editor content to a local `.py` file, then use `Load` to load a local `.py` file into the editor.
 11. While the script runs, switch Burp tabs and confirm Burp remains responsive.
+
+## Hybrid Package Manager
+
+The `Package Manager` workspace installs packages without rebuilding the extension JAR. It supports:
+
+- Package requirements from PyPI, such as `pypdf` or `requests==2.34.2`.
+- Local Windows-compatible `.whl` files.
+- Local `requirements.txt` files.
+- Index URL, extra index URL, proxy, trusted-host, and timeout settings.
+
+User packages are stored persistently under:
+
+```text
+%LOCALAPPDATA%\BurpPythonIDE\packages\cpython-3.12-windows-x64
+```
+
+They take precedence over packages bundled in the JAR for newly started script workers. Package changes are disabled while a script is running.
+
+Installing a package runs third-party Python and build code. Install only packages and wheels you trust.
+
+Cleanup controls:
+
+- `Clear User Packages` removes installed overrides and restores bundled fallbacks.
+- `Clear pip Cache` removes downloaded pip artifacts.
+- `Reset All Extension Data` deletes all extension-owned data under `%LOCALAPPDATA%\BurpPythonIDE` and requires reloading the extension. Scripts explicitly saved elsewhere are not deleted.
 
 ## CPython Worker Runtime
 

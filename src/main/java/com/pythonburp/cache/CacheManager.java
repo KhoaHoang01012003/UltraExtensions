@@ -1,5 +1,7 @@
 package com.pythonburp.cache;
 
+import com.pythonburp.storage.ExtensionDataPaths;
+
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -62,11 +64,7 @@ public final class CacheManager {
     }
 
     public static Path defaultWindowsRoot() {
-        String localAppData = System.getenv("LOCALAPPDATA");
-        Path base = localAppData == null || localAppData.isBlank()
-            ? Path.of(System.getProperty("user.home"), "AppData", "Local")
-            : Path.of(localAppData);
-        return base.resolve("BurpPythonIDE").resolve("cache");
+        return ExtensionDataPaths.windowsDefault().runtimeRoot();
     }
 
     private Path confinedCache(Path cache) throws IOException {

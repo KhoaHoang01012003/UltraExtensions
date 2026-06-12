@@ -55,6 +55,25 @@ final class CPythonWorkerRuntimeTest {
         assertTrue(result.errorMessage().contains("timed out"));
     }
 
+    @Test
+    void exposesUserPackageDirectoryToWorker() throws Exception {
+        Path userPackages = tempDir.resolve("user-packages");
+        Path fake = tempDir.resolve("env-python.ps1");
+        Files.writeString(fake, "Write-Output $env:BURP_PYTHON_USER_PACKAGES\nexit 0\n");
+        CPythonWorkerRuntime runtime = new CPythonWorkerRuntime(
+            new CPythonWorkerCommand(List.of(
+                "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", fake.toString()
+            )),
+            tempDir.resolve("env-work"),
+            new com.pythonburp.bridge.BurpBridge(),
+            userPackages
+        );
+
+        ScriptRunResult result = runtime.execute("print('ignored')", Duration.ofSeconds(5));
+
+        assertTrue(result.stdout().contains(userPackages.toAbsolutePath().normalize().toString()));
+    }
+
     private CPythonWorkerRuntime runtimeWithFakeInterpreter(String body) throws Exception {
         Path fake = tempDir.resolve("fake-python.ps1");
         Files.writeString(fake, """

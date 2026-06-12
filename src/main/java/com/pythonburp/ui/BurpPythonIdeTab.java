@@ -1,8 +1,11 @@
 package com.pythonburp.ui;
 
 import com.pythonburp.bridge.BurpBridge;
+import com.pythonburp.catalog.PackageCatalog;
+import com.pythonburp.catalog.PackageCatalogLoader;
 import com.pythonburp.concurrency.Edt;
 import com.pythonburp.concurrency.IdeExecutors;
+import com.pythonburp.concurrency.RuntimeActivityCoordinator;
 import com.pythonburp.console.ConsoleEvent;
 import com.pythonburp.console.ConsoleEventType;
 import com.pythonburp.python.CPythonRuntimeFactory;
@@ -10,11 +13,20 @@ import com.pythonburp.python.ScriptExecutor;
 import com.pythonburp.python.ScriptRunRequest;
 import com.pythonburp.python.ScriptRunResult;
 import com.pythonburp.python.ScriptStatus;
+import com.pythonburp.packages.EmbeddedPipRunner;
+import com.pythonburp.packages.PackageInventoryReader;
+import com.pythonburp.packages.PackageManagerService;
+import com.pythonburp.packages.PackageRequestStore;
+import com.pythonburp.packages.PackageSettingsStore;
+import com.pythonburp.packages.SharedPackageEnvironment;
+import com.pythonburp.storage.ExtensionDataCleaner;
+import com.pythonburp.storage.ExtensionDataPaths;
 
 import javax.swing.JButton;
 import javax.swing.JFileChooser;
 import javax.swing.JPanel;
 import javax.swing.JSplitPane;
+import javax.swing.JTabbedPane;
 import javax.swing.JToolBar;
 import javax.swing.SwingUtilities;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -33,14 +45,23 @@ public final class BurpPythonIdeTab extends JPanel {
     private final ScriptExecutor scriptExecutor;
     private final IdeExecutors executors;
     private final BurpBridge bridge;
-    private final CPythonRuntimeFactory runtimeFactory = new CPythonRuntimeFactory();
     private Future<ScriptRunResult> activeRun;
 
     public BurpPythonIdeTab(IdeExecutors executors, BurpBridge bridge) {
+        this(executors, bridge, defaults());
+    }
+
+    private BurpPythonIdeTab(IdeExecutors executors, BurpBridge bridge, Defaults defaults) {
+        this(executors, bridge, defaults.paths(), defaults.coordinator(), defaults.runtimeFactory(), defaults.packageService());
+    }
+
+    public BurpPythonIdeTab(IdeExecutors executors, BurpBridge bridge, ExtensionDataPaths paths,
+                            RuntimeActivityCoordinator coordinator, CPythonRuntimeFactory runtimeFactory,
+                            PackageManagerService packageService) {
         super(new BorderLayout());
         this.executors = executors;
         this.bridge = bridge;
-        this.scriptExecutor = new ScriptExecutor(executors, () -> runtimeFactory.get(bridge));
+        this.scriptExecutor = new ScriptExecutor(executors, () -> runtimeFactory.get(bridge), coordinator);
 
         JButton load = new JButton("Load");
         JButton saveAs = new JButton("Save As");
@@ -66,10 +87,41 @@ public final class BurpPythonIdeTab extends JPanel {
         JSplitPane main = new JSplitPane(JSplitPane.VERTICAL_SPLIT, editor, console);
         main.setResizeWeight(0.7);
 
-        add(toolbar, BorderLayout.NORTH);
-        add(main, BorderLayout.CENTER);
-        add(statusBar, BorderLayout.SOUTH);
+        JPanel editorWorkspace = new JPanel(new BorderLayout());
+        editorWorkspace.add(toolbar, BorderLayout.NORTH);
+        editorWorkspace.add(main, BorderLayout.CENTER);
+        editorWorkspace.add(statusBar, BorderLayout.SOUTH);
+
+        PackageManagerPanel packagePanel = new PackageManagerPanel();
+        PackageManagerController packageController = new PackageManagerController(
+            packagePanel, packageService, executors, paths.root(), coordinator);
+
+        JTabbedPane workspaces = new JTabbedPane();
+        workspaces.addTab("Editor", editorWorkspace);
+        workspaces.addTab("Package Manager", packagePanel);
+        add(workspaces, BorderLayout.CENTER);
+        SwingUtilities.invokeLater(packageController::refresh);
     }
+
+    private static Defaults defaults() {
+        ExtensionDataPaths paths = ExtensionDataPaths.windowsDefault();
+        RuntimeActivityCoordinator coordinator = new RuntimeActivityCoordinator();
+        CPythonRuntimeFactory runtimeFactory = new CPythonRuntimeFactory(paths);
+        PackageCatalog catalog;
+        try { catalog = PackageCatalogLoader.loadBundled(); }
+        catch (IOException e) { catalog = new PackageCatalog(List.of()); }
+        ExtensionDataCleaner cleaner = new ExtensionDataCleaner(paths);
+        PackageManagerService service = new PackageManagerService(
+            paths, coordinator, new SharedPackageEnvironment(paths),
+            new PackageRequestStore(paths.packageRequests()),
+            new PackageSettingsStore(paths.settings().resolve("pip.properties")),
+            new PackageInventoryReader(catalog), cleaner, new EmbeddedPipRunner(), runtimeFactory::pythonExecutable
+        );
+        return new Defaults(paths, coordinator, runtimeFactory, service);
+    }
+
+    private record Defaults(ExtensionDataPaths paths, RuntimeActivityCoordinator coordinator,
+                            CPythonRuntimeFactory runtimeFactory, PackageManagerService packageService) {}
 
     @Override
     public void addNotify() {
@@ -125,7 +177,14 @@ public final class BurpPythonIdeTab extends JPanel {
         }
         statusBar.setStatus("Running");
         console.appendSystem("Running script");
-        Future<ScriptRunResult> run = scriptExecutor.run(new ScriptRunRequest(editor.source(), Duration.ofMinutes(5)));
+        Future<ScriptRunResult> run;
+        try {
+            run = scriptExecutor.run(new ScriptRunRequest(editor.source(), Duration.ofMinutes(5)));
+        } catch (IllegalStateException e) {
+            statusBar.setStatus("Package operation active");
+            console.append(List.of(ConsoleEvent.now(ConsoleEventType.STDERR, e.getMessage())));
+            return;
+        }
         activeRun = run;
         Thread waiter = new Thread(() -> {
             try {

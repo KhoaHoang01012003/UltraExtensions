@@ -1,10 +1,12 @@
 package com.pythonburp.python;
 
 import com.pythonburp.concurrency.IdeExecutors;
+import com.pythonburp.concurrency.RuntimeActivityCoordinator;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.util.concurrent.Future;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -55,6 +57,28 @@ final class ScriptExecutorTest {
 
             assertEquals(ScriptStatus.SUCCEEDED, result.status());
             assertEquals(timeout, observedTimeout.get());
+        }
+    }
+
+    @Test
+    void scriptLeaseIsActiveUntilWorkerCompletes() throws Exception {
+        try (IdeExecutors executors = new IdeExecutors(1)) {
+            RuntimeActivityCoordinator coordinator = new RuntimeActivityCoordinator();
+            CountDownLatch release = new CountDownLatch(1);
+            ScriptExecutor scriptExecutor = new ScriptExecutor(executors, () -> new PythonRuntime() {
+                @Override public ScriptRunResult execute(String source, Duration timeout) {
+                    try { release.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                    return ScriptRunResult.succeeded("", "");
+                }
+                @Override public void close() { }
+            }, coordinator);
+
+            Future<ScriptRunResult> run = scriptExecutor.run(new ScriptRunRequest("pass", Duration.ofSeconds(5)));
+
+            assertEquals(1, coordinator.snapshot().activeScripts());
+            release.countDown();
+            run.get();
+            assertEquals(0, coordinator.snapshot().activeScripts());
         }
     }
 }

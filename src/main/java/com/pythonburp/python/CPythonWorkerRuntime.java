@@ -4,6 +4,7 @@ import com.pythonburp.bridge.BurpBridge;
 import com.pythonburp.bridge.HttpBridge;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -12,21 +13,28 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Comparator;
 import java.util.concurrent.TimeUnit;
 
 public final class CPythonWorkerRuntime implements PythonRuntime {
     private final CPythonWorkerCommand command;
     private final Path workingDirectory;
     private final BurpBridge bridge;
+    private final Path userPackages;
 
     public CPythonWorkerRuntime(CPythonWorkerCommand command, Path workingDirectory) {
-        this(command, workingDirectory, new BurpBridge());
+        this(command, workingDirectory, new BurpBridge(), workingDirectory.resolve("user-packages"));
     }
 
     public CPythonWorkerRuntime(CPythonWorkerCommand command, Path workingDirectory, BurpBridge bridge) {
+        this(command, workingDirectory, bridge, workingDirectory.resolve("user-packages"));
+    }
+
+    public CPythonWorkerRuntime(CPythonWorkerCommand command, Path workingDirectory, BurpBridge bridge, Path userPackages) {
         this.command = Objects.requireNonNull(command, "command");
         this.workingDirectory = Objects.requireNonNull(workingDirectory, "workingDirectory").toAbsolutePath().normalize();
         this.bridge = Objects.requireNonNull(bridge, "bridge");
+        this.userPackages = Objects.requireNonNull(userPackages, "userPackages").toAbsolutePath().normalize();
     }
 
     @Override
@@ -35,15 +43,33 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
         Objects.requireNonNull(timeout, "timeout");
 
         Path script = null;
+        Path launcher = null;
+        Path rpcDirectory = null;
         try {
             Files.createDirectories(workingDirectory);
+            Files.createDirectories(userPackages);
             script = Files.createTempFile(workingDirectory, "burp-python-", ".py");
             Files.writeString(script, source);
-            Path rpcDirectory = Files.createTempDirectory(workingDirectory, "rpc-");
+            launcher = Files.createTempFile(workingDirectory, "burp-python-launcher-", ".py");
+            Files.writeString(launcher, """
+                import os
+                import runpy
+                import sys
+                user_packages = os.environ.get("BURP_PYTHON_USER_PACKAGES", "")
+                if user_packages:
+                    sys.path.insert(0, user_packages)
+                runpy.run_path(sys.argv[1], run_name="__main__")
+                """, StandardCharsets.UTF_8);
+            rpcDirectory = Files.createTempDirectory(workingDirectory, "rpc-");
 
-            ProcessBuilder builder = new ProcessBuilder(command.commandFor(script))
+            ProcessBuilder builder = new ProcessBuilder(command.commandFor(launcher, script))
                 .directory(workingDirectory.toFile());
             builder.environment().put("BURP_PYTHON_RPC_DIR", rpcDirectory.toString());
+            builder.environment().put("BURP_PYTHON_USER_PACKAGES", userPackages.toString());
+            String existingPythonPath = builder.environment().getOrDefault("PYTHONPATH", "");
+            builder.environment().put("PYTHONPATH", existingPythonPath.isBlank()
+                ? userPackages.toString()
+                : userPackages + File.pathSeparator + existingPythonPath);
             Process process = builder.start();
 
             ByteArrayOutputStream stdout = new ByteArrayOutputStream();
@@ -76,6 +102,18 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
                     Files.deleteIfExists(script);
                 } catch (IOException ignored) {
                     // Best effort: script files live under the extension worker cache.
+                }
+            }
+            if (launcher != null) {
+                try {
+                    Files.deleteIfExists(launcher);
+                } catch (IOException ignored) {
+                }
+            }
+            if (rpcDirectory != null) {
+                try {
+                    deleteTree(rpcDirectory);
+                } catch (IOException ignored) {
                 }
             }
         }
@@ -206,5 +244,12 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
 
     private static String text(ByteArrayOutputStream stream) {
         return stream.toString(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private static void deleteTree(Path root) throws IOException {
+        if (!Files.exists(root)) return;
+        try (var entries = Files.walk(root)) {
+            for (Path path : entries.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(path);
+        }
     }
 }
