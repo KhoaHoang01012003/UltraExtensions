@@ -25,9 +25,11 @@ final class PackageCatalogLoaderTest {
         assertEquals("0.2.0", entries.get("burp.encoder").version());
         assertEquals("bundled-cpython", entries.get("html5lib").version());
         assertEquals("cpython-wheel", entries.get("pyjwt").tier());
+        assertEquals("cpython-wheel", entries.get("pypdf").tier());
         assertEquals("cpython-native-wheel", entries.get("cryptography").tier());
         assertTrue(entries.get("numpy").nativeRequired());
         assertTrue(entries.get("pyjwt").smokeTest().contains("import jwt"));
+        assertTrue(entries.get("pypdf").smokeTest().contains("import pypdf"));
     }
 
     @Test

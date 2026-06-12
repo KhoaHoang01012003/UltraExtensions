@@ -31,4 +31,8 @@ public final class ConsolePanel extends JPanel {
     public void appendSystem(String text) {
         output.append("[system] " + text + "\n");
     }
+
+    public void clear() {
+        output.setText("");
+    }
 }

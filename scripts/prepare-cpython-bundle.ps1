@@ -18,14 +18,27 @@ param(
 $ErrorActionPreference = "Stop"
 
 $runtimeDir = Join-Path $OutputDir "cpython\windows-x64"
+$manifest = Join-Path $runtimeDir "burp-python-runtime.txt"
+$expectedManifest = @(
+    "python=$PythonVersion",
+    "packages=$Packages"
+)
 $marker = Join-Path $runtimeDir ".burp-python-cpython-bundle-ready"
 if (Test-Path $marker) {
-    $sitePackages = Join-Path $runtimeDir "Lib\site-packages"
-    if ((Test-Path $WorkerModulesDir) -and (Test-Path $sitePackages)) {
-        Copy-Item -Path (Join-Path $WorkerModulesDir "*") -Destination $sitePackages -Recurse -Force
+    $currentManifest = @()
+    if (Test-Path $manifest) {
+        $currentManifest = Get-Content -Path $manifest
     }
-    Write-Host "CPython bundle already prepared at $runtimeDir"
-    exit 0
+    $manifestMatches = (Compare-Object -ReferenceObject $expectedManifest -DifferenceObject $currentManifest -SyncWindow 0).Count -eq 0
+    if ($manifestMatches) {
+        $sitePackages = Join-Path $runtimeDir "Lib\site-packages"
+        if ((Test-Path $WorkerModulesDir) -and (Test-Path $sitePackages)) {
+            Copy-Item -Path (Join-Path $WorkerModulesDir "*") -Destination $sitePackages -Recurse -Force
+        }
+        Write-Host "CPython bundle already prepared at $runtimeDir"
+        exit 0
+    }
+    Write-Host "CPython bundle manifest changed; rebuilding $runtimeDir"
 }
 
 if (Test-Path $runtimeDir) {
@@ -85,9 +98,5 @@ if (Test-Path $WorkerModulesDir) {
     Copy-Item -Path (Join-Path $WorkerModulesDir "*") -Destination $sitePackages -Recurse -Force
 }
 
-$manifest = Join-Path $runtimeDir "burp-python-runtime.txt"
-Set-Content -Path $manifest -Encoding UTF8 -Value @(
-    "python=$PythonVersion",
-    "packages=$Packages"
-)
+Set-Content -Path $manifest -Encoding UTF8 -Value $expectedManifest
 Set-Content -Path $marker -Encoding ASCII -Value "ready"

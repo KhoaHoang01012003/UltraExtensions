@@ -21,7 +21,8 @@ build/libs/burp-python-ide-enhanced-0.2.1-all.jar
 3. Select Extension type: Java.
 4. Select `build/libs/burp-python-ide-enhanced-0.2.1-all.jar`.
 5. Confirm a `Python IDE` suite tab appears.
-6. Run:
+6. Confirm the toolbar shows `Load`, `Save As`, `Run`, `Stop`, and `Clear Log`.
+7. Run:
 
 ```python
 from burp import encoder, crypto
@@ -30,8 +31,10 @@ print(encoder.base64_encode(b"abc"))
 print(crypto.sha256_hex(b"abc"))
 ```
 
-7. Confirm the console prints `YWJj` and the SHA-256 hash.
-8. While the script runs, switch Burp tabs and confirm Burp remains responsive.
+8. Confirm the console prints `YWJj` and the SHA-256 hash.
+9. Click `Clear Log` and confirm the console clears.
+10. Use `Save As` to save the editor content to a local `.py` file, then use `Load` to load a local `.py` file into the editor.
+11. While the script runs, switch Burp tabs and confirm Burp remains responsive.
 
 ## CPython Worker Runtime
 

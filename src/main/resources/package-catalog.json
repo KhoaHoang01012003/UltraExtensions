@@ -63,6 +63,13 @@
     "smokeTest": "import jwt; print(jwt.__name__)"
   },
   {
+    "name": "pypdf",
+    "version": "bundled-cpython",
+    "tier": "cpython-wheel",
+    "nativeRequired": false,
+    "smokeTest": "import pypdf; print(pypdf.__name__)"
+  },
+  {
     "name": "cryptography",
     "version": "bundled-cpython",
     "tier": "cpython-native-wheel",

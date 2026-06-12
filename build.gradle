@@ -23,6 +23,7 @@ ext {
         "colorama",
         "PyYAML",
         "pyjwt",
+        "pypdf",
         "passlib",
         "cryptography",
         "pycryptodome",

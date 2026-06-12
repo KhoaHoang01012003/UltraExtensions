@@ -52,8 +52,7 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
             Thread stderrReader = reader(process.getErrorStream(), stderr, "burp-python-cpython-stderr");
             boolean finished = waitFor(process, timeout, rpcDirectory);
             if (!finished) {
-                process.destroyForcibly();
-                process.waitFor(5, TimeUnit.SECONDS);
+                terminate(process);
                 join(stdoutReader);
                 join(stderrReader);
                 return ScriptRunResult.failed(text(stdout), text(stderr), "Script timed out after " + timeout);
@@ -185,6 +184,20 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
         thread.setDaemon(true);
         thread.start();
         return thread;
+    }
+
+    private static void terminate(Process process) throws InterruptedException {
+        process.descendants().forEach(ProcessHandle::destroyForcibly);
+        process.destroyForcibly();
+        process.waitFor(10, TimeUnit.SECONDS);
+        process.descendants().forEach(ProcessHandle::destroyForcibly);
+        process.descendants().forEach(descendant -> {
+            try {
+                descendant.onExit().get(10, TimeUnit.SECONDS);
+            } catch (Exception ignored) {
+                // Best effort: timeout handling must return a failed script result.
+            }
+        });
     }
 
     private static void join(Thread thread) throws InterruptedException {

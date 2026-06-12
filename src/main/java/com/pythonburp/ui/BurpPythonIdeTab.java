@@ -1,10 +1,6 @@
 package com.pythonburp.ui;
 
 import com.pythonburp.bridge.BurpBridge;
-import com.pythonburp.catalog.PackageCatalog;
-import com.pythonburp.catalog.PackageDiagnosticResult;
-import com.pythonburp.catalog.PackageDiagnosticStatus;
-import com.pythonburp.catalog.PackageDiagnosticsRunner;
 import com.pythonburp.concurrency.Edt;
 import com.pythonburp.concurrency.IdeExecutors;
 import com.pythonburp.console.ConsoleEvent;
@@ -16,12 +12,15 @@ import com.pythonburp.python.ScriptRunResult;
 import com.pythonburp.python.ScriptStatus;
 
 import javax.swing.JButton;
+import javax.swing.JFileChooser;
 import javax.swing.JPanel;
 import javax.swing.JSplitPane;
-import javax.swing.JTabbedPane;
 import javax.swing.JToolBar;
 import javax.swing.SwingUtilities;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.BorderLayout;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CancellationException;
@@ -33,38 +32,38 @@ public final class BurpPythonIdeTab extends JPanel {
     private final StatusBar statusBar = new StatusBar();
     private final ScriptExecutor scriptExecutor;
     private final IdeExecutors executors;
-    private final PackageCatalog catalog;
     private final BurpBridge bridge;
-    private final PackageCatalogPanel packageCatalogPanel;
     private final CPythonRuntimeFactory runtimeFactory = new CPythonRuntimeFactory();
     private Future<ScriptRunResult> activeRun;
-    private Future<?> activeDiagnostics;
 
-    public BurpPythonIdeTab(IdeExecutors executors, PackageCatalog catalog, BurpBridge bridge) {
+    public BurpPythonIdeTab(IdeExecutors executors, BurpBridge bridge) {
         super(new BorderLayout());
         this.executors = executors;
-        this.catalog = catalog;
         this.bridge = bridge;
         this.scriptExecutor = new ScriptExecutor(executors, () -> runtimeFactory.get(bridge));
-        this.packageCatalogPanel = new PackageCatalogPanel(catalog, this::runPackageDiagnostics);
 
+        JButton load = new JButton("Load");
+        JButton saveAs = new JButton("Save As");
         JButton run = new JButton("Run");
         JButton stop = new JButton("Stop");
+        JButton clearLog = new JButton("Clear Log");
+        load.addActionListener(event -> loadScript());
+        saveAs.addActionListener(event -> saveScriptAs());
         run.addActionListener(event -> runScript());
         stop.addActionListener(event -> stopScript());
+        clearLog.addActionListener(event -> console.clear());
 
         JToolBar toolbar = new JToolBar();
         toolbar.setFloatable(false);
+        toolbar.add(load);
+        toolbar.add(saveAs);
+        toolbar.addSeparator();
         toolbar.add(run);
         toolbar.add(stop);
+        toolbar.addSeparator();
+        toolbar.add(clearLog);
 
-        JTabbedPane right = new JTabbedPane();
-        right.addTab("Packages", packageCatalogPanel);
-
-        JSplitPane center = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, editor, right);
-        center.setResizeWeight(0.75);
-
-        JSplitPane main = new JSplitPane(JSplitPane.VERTICAL_SPLIT, center, console);
+        JSplitPane main = new JSplitPane(JSplitPane.VERTICAL_SPLIT, editor, console);
         main.setResizeWeight(0.7);
 
         add(toolbar, BorderLayout.NORTH);
@@ -76,6 +75,46 @@ public final class BurpPythonIdeTab extends JPanel {
     public void addNotify() {
         super.addNotify();
         SwingUtilities.invokeLater(editor::focusEditor);
+    }
+
+    private void loadScript() {
+        Edt.requireEdt();
+        JFileChooser chooser = pythonFileChooser();
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        Path path = chooser.getSelectedFile().toPath();
+        try {
+            editor.setSource(ScriptFileService.load(path));
+            statusBar.setStatus("Loaded " + path.getFileName());
+            console.appendSystem("Loaded " + path);
+        } catch (IOException e) {
+            statusBar.setStatus("Load failed");
+            console.append(List.of(ConsoleEvent.now(ConsoleEventType.STDERR, "Load failed: " + e.getMessage())));
+        }
+    }
+
+    private void saveScriptAs() {
+        Edt.requireEdt();
+        JFileChooser chooser = pythonFileChooser();
+        if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        Path path = chooser.getSelectedFile().toPath();
+        try {
+            ScriptFileService.save(path, editor.source());
+            statusBar.setStatus("Saved " + path.getFileName());
+            console.appendSystem("Saved " + path);
+        } catch (IOException e) {
+            statusBar.setStatus("Save failed");
+            console.append(List.of(ConsoleEvent.now(ConsoleEventType.STDERR, "Save failed: " + e.getMessage())));
+        }
+    }
+
+    private JFileChooser pythonFileChooser() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setFileFilter(new FileNameExtensionFilter("Python scripts (*.py)", "py"));
+        return chooser;
     }
 
     private void runScript() {
@@ -108,53 +147,6 @@ public final class BurpPythonIdeTab extends JPanel {
             activeRun.cancel(true);
             statusBar.setStatus("Stopping");
         }
-    }
-
-    private void runPackageDiagnostics() {
-        Edt.requireEdt();
-        if (activeDiagnostics != null && !activeDiagnostics.isDone()) {
-            console.appendSystem("Package diagnostics already running");
-            return;
-        }
-        packageCatalogPanel.markRunning();
-        statusBar.setStatus("Checking packages");
-        console.appendSystem("Running package diagnostics");
-        PackageDiagnosticsRunner runner = new PackageDiagnosticsRunner(() -> runtimeFactory.get(bridge));
-        activeDiagnostics = executors.submitPackageTask(() -> {
-            try {
-                List<PackageDiagnosticResult> results = runner.run(catalog, Duration.ofSeconds(30));
-                Edt.runLater(() -> publishPackageDiagnostics(results));
-            } catch (Exception e) {
-                Edt.runLater(() -> publishPackageDiagnosticsFailure(e));
-            }
-        });
-    }
-
-    private void publishPackageDiagnostics(List<PackageDiagnosticResult> results) {
-        Edt.requireEdt();
-        activeDiagnostics = null;
-        packageCatalogPanel.updateDiagnostics(results);
-        long failed = results.stream()
-            .filter(result -> result.status() == PackageDiagnosticStatus.FAILED)
-            .count();
-        for (PackageDiagnosticResult result : results) {
-            if (result.status() == PackageDiagnosticStatus.FAILED) {
-                console.append(List.of(ConsoleEvent.now(
-                    ConsoleEventType.STDERR,
-                    result.entry().name() + " failed: " + result.errorMessage()
-                )));
-            }
-        }
-        statusBar.setStatus(failed == 0 ? "Packages OK" : "Package failures: " + failed);
-        console.appendSystem("Package diagnostics finished: " + (results.size() - failed) + " passed, " + failed + " failed");
-    }
-
-    private void publishPackageDiagnosticsFailure(Exception e) {
-        Edt.requireEdt();
-        activeDiagnostics = null;
-        statusBar.setStatus("Package diagnostics failed");
-        packageCatalogPanel.updateDiagnostics(List.of());
-        console.append(List.of(ConsoleEvent.now(ConsoleEventType.STDERR, "Package diagnostics failed: " + e)));
     }
 
     private void publishFailure(Future<ScriptRunResult> run, Exception e) {
