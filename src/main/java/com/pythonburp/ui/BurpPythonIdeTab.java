@@ -95,10 +95,13 @@ public final class BurpPythonIdeTab extends JPanel {
         PackageManagerPanel packagePanel = new PackageManagerPanel();
         PackageManagerController packageController = new PackageManagerController(
             packagePanel, packageService, executors, paths.root(), coordinator);
+        RepeaterBatchPanel repeaterPanel = new RepeaterBatchPanel();
+        new RepeaterBatchController(repeaterPanel, executors);
 
         JTabbedPane workspaces = new JTabbedPane();
         workspaces.addTab("Editor", editorWorkspace);
         workspaces.addTab("Package Manager", packagePanel);
+        workspaces.addTab("Repeater Batch", repeaterPanel);
         add(workspaces, BorderLayout.CENTER);
         SwingUtilities.invokeLater(packageController::refresh);
     }

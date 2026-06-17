@@ -46,7 +46,8 @@ final class BurpPythonIdeTabTest {
             JTabbedPane tabs = findTabbedPane(newTab());
             hasWorkspaces.set(tabs != null
                 && tabs.indexOfTab("Editor") >= 0
-                && tabs.indexOfTab("Package Manager") >= 0);
+                && tabs.indexOfTab("Package Manager") >= 0
+                && tabs.indexOfTab("Repeater Batch") >= 0);
         });
 
         assertTrue(hasWorkspaces.get());
