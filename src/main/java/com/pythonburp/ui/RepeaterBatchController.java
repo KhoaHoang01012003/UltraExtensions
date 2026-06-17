@@ -54,18 +54,22 @@ public final class RepeaterBatchController {
 
     private RepeaterBatchResult normalize(List<RepeaterTabSnapshot> targets) {
         int modified = 0;
+        List<Runnable> uiUpdates = new java.util.ArrayList<>();
         for (RepeaterTabSnapshot target : targets) {
             String original = target.requestText();
             String normalized = RepeaterRequestNormalizer.normalizeGetToPost(original).orElse(null);
             if (normalized != null && !normalized.equals(original)) {
                 JTextComponent editor = target.editor();
-                Edt.runAndWait(() -> editor.setText(normalized));
+                uiUpdates.add(() -> editor.setText(normalized));
+                uiUpdates.add(() -> panel.appendOutput("[system] Updated " + target.tabPath()));
                 modified++;
-                panel.appendOutput("[system] Updated " + target.tabPath());
             }
         }
         int scanned = targets.size();
         int changed = modified;
+        if (!uiUpdates.isEmpty()) {
+            Edt.runLater(() -> uiUpdates.forEach(Runnable::run));
+        }
         Edt.runLater(() -> panel.setBusy(false, "Updated " + changed + " of " + scanned + " tabs"));
         return new RepeaterBatchResult(scanned, changed);
     }

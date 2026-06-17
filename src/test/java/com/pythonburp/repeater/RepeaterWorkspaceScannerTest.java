@@ -27,9 +27,8 @@ final class RepeaterWorkspaceScannerTest {
                     Host: example.com
 
                     """));
-                repeaterTabs.addTab("Req 1", requestTab);
-                HiddenWrapper wrapper = new HiddenWrapper(repeaterTabs);
-                frame.setContentPane(wrapper);
+                repeaterTabs.addTab("Repeater 1", requestTab);
+                frame.setContentPane(repeaterTabs);
                 frame.pack();
                 frame.setVisible(true);
             });
@@ -40,16 +39,6 @@ final class RepeaterWorkspaceScannerTest {
             assertTrue(snapshots.get(0).requestText().contains("GET /submit"));
         } finally {
             SwingUtilities.invokeAndWait(frame::dispose);
-        }
-    }
-
-    private static final class HiddenWrapper extends JPanel {
-        private final Object hiddenRepeaterTabs;
-
-        private HiddenWrapper(Object hiddenRepeaterTabs) {
-            super(new BorderLayout());
-            this.hiddenRepeaterTabs = hiddenRepeaterTabs;
-            add(new JPanel(), BorderLayout.CENTER);
         }
     }
 }
