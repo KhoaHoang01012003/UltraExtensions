@@ -8,6 +8,7 @@ import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 import java.awt.BorderLayout;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -19,7 +20,6 @@ final class RepeaterWorkspaceScannerTest {
         JFrame frame = new JFrame("Burp Suite");
         try {
             SwingUtilities.invokeAndWait(() -> {
-                JTabbedPane suiteTabs = new JTabbedPane();
                 JTabbedPane repeaterTabs = new JTabbedPane();
                 JPanel requestTab = new JPanel(new BorderLayout());
                 requestTab.add(new JTextArea("""
@@ -28,8 +28,8 @@ final class RepeaterWorkspaceScannerTest {
 
                     """));
                 repeaterTabs.addTab("Req 1", requestTab);
-                suiteTabs.addTab("Repeater", repeaterTabs);
-                frame.setContentPane(suiteTabs);
+                HiddenWrapper wrapper = new HiddenWrapper(repeaterTabs);
+                frame.setContentPane(wrapper);
                 frame.pack();
                 frame.setVisible(true);
             });
@@ -40,6 +40,16 @@ final class RepeaterWorkspaceScannerTest {
             assertTrue(snapshots.get(0).requestText().contains("GET /submit"));
         } finally {
             SwingUtilities.invokeAndWait(frame::dispose);
+        }
+    }
+
+    private static final class HiddenWrapper extends JPanel {
+        private final Object hiddenRepeaterTabs;
+
+        private HiddenWrapper(Object hiddenRepeaterTabs) {
+            super(new BorderLayout());
+            this.hiddenRepeaterTabs = hiddenRepeaterTabs;
+            add(new JPanel(), BorderLayout.CENTER);
         }
     }
 }

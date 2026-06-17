@@ -7,16 +7,21 @@ import javax.swing.text.JTextComponent;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Window;
+import java.lang.reflect.Array;
+import java.lang.reflect.Field;
+import java.lang.reflect.InaccessibleObjectException;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 public final class RepeaterWorkspaceScanner {
     public List<RepeaterTabSnapshot> scanOpenTabs() {
         List<RepeaterTabSnapshot> snapshots = new ArrayList<>();
         Edt.runAndWait(() -> {
+            IdentityHashMap<Object, Boolean> visited = new IdentityHashMap<>();
             IdentityHashMap<JTextComponent, Boolean> seenEditors = new IdentityHashMap<>();
             for (Window window : Window.getWindows()) {
                 if (window == null || !window.isDisplayable()) {
@@ -26,23 +31,35 @@ public final class RepeaterWorkspaceScanner {
                 if (windowTitle == null || windowTitle.isBlank()) {
                     windowTitle = window.getClass().getSimpleName();
                 }
-                scanComponent(window, windowTitle, new ArrayList<>(), false, seenEditors, snapshots);
+                scanObject(window, windowTitle, new ArrayList<>(), false, visited, seenEditors, snapshots);
             }
         });
         return snapshots;
     }
 
-    private boolean scanComponent(Component component, String windowTitle, List<String> path,
-                                  boolean repeaterContext, Map<JTextComponent, Boolean> seenEditors,
-                                  List<RepeaterTabSnapshot> snapshots) {
-        if (component == null) {
-            return false;
+    private void scanObject(Object candidate, String windowTitle, List<String> path, boolean repeaterContext,
+                            Map<Object, Boolean> visited, Map<JTextComponent, Boolean> seenEditors,
+                            List<RepeaterTabSnapshot> snapshots) {
+        if (candidate == null || visited.putIfAbsent(candidate, Boolean.TRUE) != null) {
+            return;
         }
 
-        boolean nextRepeaterContext = repeaterContext || componentNameLooksLikeRepeater(component)
-            || textLooksLikeRepeater(windowTitle);
+        boolean nextRepeaterContext = repeaterContext
+            || textLooksLikeRepeater(windowTitle)
+            || componentNameLooksLikeRepeater(candidate)
+            || nameLooksLikeRepeater(candidate);
 
-        if (component instanceof JTabbedPane tabbedPane) {
+        if (candidate instanceof JTextComponent textComponent) {
+            if ((nextRepeaterContext || pathIndicatesRepeater(path) || textLooksLikeRepeater(textComponent.getName()))
+                && looksLikeHttpRequest(textComponent.getText())
+                && seenEditors.putIfAbsent(textComponent, Boolean.TRUE) == null) {
+                snapshots.add(new RepeaterTabSnapshot(windowTitle, String.join(" / ", path), textComponent,
+                    textComponent.getText()));
+            }
+            return;
+        }
+
+        if (candidate instanceof JTabbedPane tabbedPane) {
             for (int i = 0; i < tabbedPane.getTabCount(); i++) {
                 Component child = tabbedPane.getComponentAt(i);
                 String title = tabbedPane.getTitleAt(i);
@@ -50,42 +67,57 @@ public final class RepeaterWorkspaceScanner {
                 if (title != null && !title.isBlank()) {
                     nextPath.add(title);
                 }
-                boolean childRepeater = nextRepeaterContext || textLooksLikeRepeater(title);
-                if (scanComponent(child, windowTitle, nextPath, childRepeater, seenEditors, snapshots)) {
-                    continue;
-                }
+                scanObject(child, windowTitle, nextPath, nextRepeaterContext || textLooksLikeRepeater(title),
+                    visited, seenEditors, snapshots);
             }
-            return false;
+            return;
         }
 
-        if (nextRepeaterContext) {
-            JTextComponent editor = findRequestEditor(component);
-            if (editor != null && seenEditors.putIfAbsent(editor, Boolean.TRUE) == null) {
-                snapshots.add(new RepeaterTabSnapshot(windowTitle, String.join(" / ", path), editor, editor.getText()));
-            }
-        }
-
-        if (component instanceof Container container) {
+        if (candidate instanceof Container container) {
             for (Component child : container.getComponents()) {
-                scanComponent(child, windowTitle, path, nextRepeaterContext, seenEditors, snapshots);
+                scanObject(child, windowTitle, path, nextRepeaterContext, visited, seenEditors, snapshots);
             }
         }
-        return false;
-    }
 
-    private JTextComponent findRequestEditor(Component component) {
-        if (component instanceof JTextComponent textComponent && looksLikeHttpRequest(textComponent.getText())) {
-            return textComponent;
-        }
-        if (component instanceof Container container) {
-            for (Component child : container.getComponents()) {
-                JTextComponent editor = findRequestEditor(child);
-                if (editor != null) {
-                    return editor;
-                }
+        if (candidate.getClass().isArray()) {
+            int length = Array.getLength(candidate);
+            for (int i = 0; i < length; i++) {
+                scanObject(Array.get(candidate, i), windowTitle, path, nextRepeaterContext, visited, seenEditors,
+                    snapshots);
             }
         }
-        return null;
+
+        if (candidate instanceof Collection<?> collection) {
+            for (Object item : collection) {
+                scanObject(item, windowTitle, path, nextRepeaterContext, visited, seenEditors, snapshots);
+            }
+        }
+
+        if (candidate instanceof Map<?, ?> map) {
+            for (Object item : map.values()) {
+                scanObject(item, windowTitle, path, nextRepeaterContext, visited, seenEditors, snapshots);
+            }
+        }
+
+        for (Field field : candidate.getClass().getDeclaredFields()) {
+            if (Modifier.isStatic(field.getModifiers()) || field.getType().isPrimitive()) {
+                continue;
+            }
+            try {
+                if (!field.canAccess(candidate)) {
+                    field.setAccessible(true);
+                }
+                Object value = field.get(candidate);
+                if (value != null) {
+                    boolean fieldRepeater = nextRepeaterContext || fieldNameLooksLikeRepeater(field.getName());
+                    scanObject(value, windowTitle, path, fieldRepeater, visited, seenEditors, snapshots);
+                }
+            } catch (InaccessibleObjectException | IllegalAccessException ignored) {
+                // Best effort: Burp internals may keep fields inaccessible.
+            } catch (RuntimeException ignored) {
+                // Best effort only.
+            }
+        }
     }
 
     private static boolean looksLikeHttpRequest(String text) {
@@ -98,12 +130,32 @@ public final class RepeaterWorkspaceScanner {
         return firstLine.matches("(?i)^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE|CONNECT)\\s+\\S+\\s+HTTP/\\d(?:\\.\\d)?$");
     }
 
-    private static boolean componentNameLooksLikeRepeater(Component component) {
-        String name = component.getClass().getSimpleName().toLowerCase();
-        return name.contains("repeater");
+    private static boolean componentNameLooksLikeRepeater(Object candidate) {
+        return candidate.getClass().getSimpleName().toLowerCase().contains("repeater");
+    }
+
+    private static boolean nameLooksLikeRepeater(Object candidate) {
+        if (candidate instanceof Component component) {
+            String name = component.getName();
+            return name != null && name.toLowerCase().contains("repeater");
+        }
+        return false;
+    }
+
+    private static boolean fieldNameLooksLikeRepeater(String name) {
+        return name != null && name.toLowerCase().contains("repeater");
     }
 
     private static boolean textLooksLikeRepeater(String text) {
         return text != null && text.toLowerCase().contains("repeater");
+    }
+
+    private static boolean pathIndicatesRepeater(List<String> path) {
+        for (String element : path) {
+            if (textLooksLikeRepeater(element)) {
+                return true;
+            }
+        }
+        return false;
     }
 }
