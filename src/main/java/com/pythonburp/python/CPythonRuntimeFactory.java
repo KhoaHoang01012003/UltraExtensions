@@ -9,7 +9,7 @@ import java.util.function.Supplier;
 
 public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     public static final String RESOURCE_ROOT = "/cpython/windows-x64";
-    public static final String RUNTIME_ID = "cpython-3.12.10-popular-pypdf-rpc1";
+    public static final String RUNTIME_ID = "cpython-3.12.10-popular-pypdf-rpc3";
 
     private final CPythonBundleExtractor extractor;
     private final ExtensionDataPaths paths;

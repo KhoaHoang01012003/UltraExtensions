@@ -175,6 +175,17 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
             response.put("body", result.body());
             return response;
         }
+        if ("repeater.send".equals(operation)) {
+            bridge.repeater().send(
+                fields.getOrDefault("method", "GET"),
+                fields.getOrDefault("url", ""),
+                fields.getOrDefault("body", ""),
+                fields.get("tabName")
+            );
+            Map<String, String> response = new LinkedHashMap<>();
+            response.put("ok", "true");
+            return response;
+        }
         Map<String, String> response = new LinkedHashMap<>();
         response.put("ok", "false");
         response.put("error", "Unsupported RPC operation: " + operation);

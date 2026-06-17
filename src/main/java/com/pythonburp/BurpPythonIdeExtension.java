@@ -3,6 +3,7 @@ package com.pythonburp;
 import burp.api.montoya.MontoyaApi;
 import com.pythonburp.bridge.BurpBridge;
 import com.pythonburp.bridge.MontoyaHttpBridge;
+import com.pythonburp.bridge.MontoyaRepeaterBridge;
 import com.pythonburp.catalog.PackageCatalog;
 import com.pythonburp.catalog.PackageCatalogLoader;
 import com.pythonburp.concurrency.Edt;
@@ -32,7 +33,7 @@ public final class BurpPythonIdeExtension {
         api.extension().setName(VersionInfo.EXTENSION_NAME);
         ExtensionContext initializedContext = new ExtensionContext(api, new IdeExecutors(defaultScriptThreads()));
         this.context = initializedContext;
-        BurpBridge bridge = new BurpBridge(new MontoyaHttpBridge(api));
+        BurpBridge bridge = new BurpBridge(new MontoyaHttpBridge(api), new MontoyaRepeaterBridge(api));
         ExtensionDataPaths paths = ExtensionDataPaths.windowsDefault();
         RuntimeActivityCoordinator coordinator = new RuntimeActivityCoordinator();
         CPythonRuntimeFactory runtimeFactory = new CPythonRuntimeFactory(paths);
