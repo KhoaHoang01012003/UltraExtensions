@@ -51,6 +51,20 @@ final class NmapRuntimePathsTest {
   }
 
   @Test
+  void createsMissingZenmapBinTreeForMixedCaseWindowsStyleSuffix() throws Exception {
+    Path nmapRoot = Files.createDirectories(tempDir.resolve("Nmap"));
+    Path missingZenmapBin = nmapRoot.resolve("Zenmap/Bin");
+
+    Path runtimeCacheRoot = new NmapRuntimePaths(missingZenmapBin).workerCacheRoot();
+
+    assertTrue(Files.isDirectory(missingZenmapBin));
+    assertEquals(
+        missingZenmapBin.resolve("BurpPythonIDE").resolve("cpython-worker").normalize(),
+        runtimeCacheRoot);
+    assertTrue(Files.isDirectory(runtimeCacheRoot));
+  }
+
+  @Test
   void rejectsMissingPathThatDoesNotEndInZenmapBin() throws Exception {
     Path nmapRoot = Files.createDirectories(tempDir.resolve("Nmap"));
     Path invalidMissingPath = nmapRoot.resolve("not-zenmap/not-bin");
@@ -59,7 +73,7 @@ final class NmapRuntimePathsTest {
         assertThrows(
             IOException.class, () -> new NmapRuntimePaths(invalidMissingPath).workerCacheRoot());
 
-    assertTrue(error.getMessage().contains("Nmap"));
+    assertTrue(error.getMessage().contains("must end in zenmap/bin"));
     assertTrue(
         error.getMessage().contains(invalidMissingPath.toAbsolutePath().normalize().toString()));
     assertTrue(Files.notExists(invalidMissingPath));

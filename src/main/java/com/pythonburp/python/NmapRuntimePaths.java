@@ -25,8 +25,14 @@ final class NmapRuntimePaths {
 
   Path workerCacheRoot() throws IOException {
     if (!Files.exists(zenmapBin)) {
+      if (!endsWithZenmapBin()) {
+        throw new IOException(
+            "Nmap runtime path must end in zenmap/bin before the CPython runtime can start: "
+                + zenmapBin
+                + ".");
+      }
       Path nmapInstallRoot = nmapInstallRoot();
-      if (nmapInstallRoot == null || !Files.isDirectory(nmapInstallRoot)) {
+      if (!Files.isDirectory(nmapInstallRoot)) {
         throw new IOException(
             "Nmap installation root is required at "
                 + nmapInstallRoot
@@ -46,15 +52,18 @@ final class NmapRuntimePaths {
   }
 
   private Path nmapInstallRoot() {
+    Path zenmapRoot = zenmapBin.getParent();
+    return zenmapRoot.getParent();
+  }
+
+  private boolean endsWithZenmapBin() {
     Path binName = zenmapBin.getFileName();
     Path zenmapRoot = zenmapBin.getParent();
     Path zenmapName = zenmapRoot == null ? null : zenmapRoot.getFileName();
-    if (binName == null
-        || zenmapName == null
-        || !"bin".equals(binName.toString())
-        || !"zenmap".equals(zenmapName.toString())) {
-      return null;
-    }
-    return zenmapRoot.getParent();
+    return segmentEqualsIgnoreCase(binName, "bin") && segmentEqualsIgnoreCase(zenmapName, "zenmap");
+  }
+
+  private boolean segmentEqualsIgnoreCase(Path pathSegment, String expected) {
+    return pathSegment != null && expected.equalsIgnoreCase(pathSegment.toString());
   }
 }
