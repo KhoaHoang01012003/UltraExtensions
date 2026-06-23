@@ -11,28 +11,19 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     public static final String RESOURCE_ROOT = "/cpython/windows-x64";
     public static final String RUNTIME_ID = "cpython-3.12.10-popular-pypdf-rpc1";
 
-    private final CPythonBundleExtractor extractor;
+    private final NmapRuntimePaths runtimePaths;
     private final ExtensionDataPaths paths;
 
     public CPythonRuntimeFactory() {
-        this(ExtensionDataPaths.windowsDefault());
+        this(NmapRuntimePaths.fixed(), ExtensionDataPaths.windowsDefault());
     }
 
     public CPythonRuntimeFactory(ExtensionDataPaths paths) {
-        this(new CPythonBundleExtractor(
-            paths.runtimeRoot().resolve("cpython-worker"),
-            CPythonRuntimeFactory.class,
-            RESOURCE_ROOT,
-            RUNTIME_ID
-        ), paths);
+        this(NmapRuntimePaths.fixed(), paths);
     }
 
-    CPythonRuntimeFactory(CPythonBundleExtractor extractor) {
-        this(extractor, ExtensionDataPaths.windowsDefault());
-    }
-
-    CPythonRuntimeFactory(CPythonBundleExtractor extractor, ExtensionDataPaths paths) {
-        this.extractor = extractor;
+    CPythonRuntimeFactory(NmapRuntimePaths runtimePaths, ExtensionDataPaths paths) {
+        this.runtimePaths = runtimePaths;
         this.paths = paths;
     }
 
@@ -56,7 +47,12 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     }
 
     public Path prepareRuntimeRoot() throws IOException {
-        return extractor.extract();
+        return new CPythonBundleExtractor(
+            runtimePaths.workerCacheRoot(),
+            CPythonRuntimeFactory.class,
+            RESOURCE_ROOT,
+            RUNTIME_ID
+        ).extract();
     }
 
     public Path pythonExecutable() {
