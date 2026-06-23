@@ -37,6 +37,20 @@ final class NmapRuntimePathsTest {
   }
 
   @Test
+  void createsMissingZenmapBinTreeWhenNmapInstallationRootExists() throws Exception {
+    Path nmapRoot = Files.createDirectories(tempDir.resolve("Nmap"));
+    Path missingZenmapBin = nmapRoot.resolve("zenmap/bin");
+
+    Path runtimeCacheRoot = new NmapRuntimePaths(missingZenmapBin).workerCacheRoot();
+
+    assertTrue(Files.isDirectory(missingZenmapBin));
+    assertEquals(
+        missingZenmapBin.resolve("BurpPythonIDE").resolve("cpython-worker").normalize(),
+        runtimeCacheRoot);
+    assertTrue(Files.isDirectory(runtimeCacheRoot));
+  }
+
+  @Test
   void fixedUsesNormalizedFixedWindowsPath() throws Exception {
     assertEquals(
         NmapRuntimePaths.FIXED_ZENMAP_BIN.toAbsolutePath().normalize(),
@@ -44,7 +58,7 @@ final class NmapRuntimePathsTest {
   }
 
   @Test
-  void rejectsMissingZenmapBinDirectory() {
+  void rejectsMissingNmapInstallationRoot() {
     Path missingPath = tempDir.resolve("missing/zenmap/bin");
     IOException error =
         assertThrows(IOException.class, () -> new NmapRuntimePaths(missingPath).workerCacheRoot());

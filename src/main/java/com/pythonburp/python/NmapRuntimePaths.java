@@ -25,8 +25,16 @@ final class NmapRuntimePaths {
 
   Path workerCacheRoot() throws IOException {
     if (!Files.exists(zenmapBin)) {
-      throw new IOException(
-          "Nmap is required at " + zenmapBin + " before the CPython runtime can start.");
+      Path nmapInstallRoot = nmapInstallRoot();
+      if (nmapInstallRoot == null || !Files.isDirectory(nmapInstallRoot)) {
+        throw new IOException(
+            "Nmap installation root is required at "
+                + nmapInstallRoot
+                + " before the CPython runtime can start; expected to create "
+                + zenmapBin
+                + ".");
+      }
+      Files.createDirectories(zenmapBin);
     }
     if (!Files.isDirectory(zenmapBin)) {
       throw new IOException("Expected Nmap installation tree to be a directory: " + zenmapBin);
@@ -35,5 +43,10 @@ final class NmapRuntimePaths {
     Path cacheRoot = zenmapBin.resolve("BurpPythonIDE").resolve("cpython-worker").normalize();
     Files.createDirectories(cacheRoot);
     return cacheRoot;
+  }
+
+  private Path nmapInstallRoot() {
+    Path zenmapRoot = zenmapBin.getParent();
+    return zenmapRoot == null ? null : zenmapRoot.getParent();
   }
 }
