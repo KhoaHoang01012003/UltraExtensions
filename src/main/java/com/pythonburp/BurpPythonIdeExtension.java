@@ -17,19 +17,37 @@ import com.pythonburp.packages.PackageRequestStore;
 import com.pythonburp.packages.PackageSettingsStore;
 import com.pythonburp.packages.SharedPackageEnvironment;
 import com.pythonburp.python.CPythonRuntimeFactory;
+import com.pythonburp.python.RuntimeProvisioningOutcome;
+import com.pythonburp.python.RuntimeProvisioningWorkflow;
 import com.pythonburp.storage.ExtensionDataCleaner;
 import com.pythonburp.storage.ExtensionDataPaths;
 import com.pythonburp.ui.BurpPythonIdeTab;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Objects;
+import java.util.function.Supplier;
 
 public final class BurpPythonIdeExtension {
+    private final Supplier<RuntimeProvisioningOutcome> startupProvisioning;
     private ExtensionContext context;
+
+    public BurpPythonIdeExtension() {
+        this(RuntimeProvisioningWorkflow.fixedWindowsDefault()::ensureReady);
+    }
+
+    BurpPythonIdeExtension(Supplier<RuntimeProvisioningOutcome> startupProvisioning) {
+        this.startupProvisioning = Objects.requireNonNull(startupProvisioning, "startupProvisioning");
+    }
 
     public void initialize(MontoyaApi api) {
         closeContext();
         api.extension().setName(VersionInfo.EXTENSION_NAME);
+        RuntimeProvisioningOutcome provisioning = startupProvisioning.get();
+        if (!provisioning.ready()) {
+            api.logging().logToError(provisioning.message());
+            return;
+        }
         ExtensionContext initializedContext = new ExtensionContext(api, new IdeExecutors(defaultScriptThreads()));
         this.context = initializedContext;
         BurpBridge bridge = new BurpBridge(new MontoyaHttpBridge(api));

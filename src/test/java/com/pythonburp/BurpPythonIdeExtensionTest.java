@@ -6,6 +6,7 @@ import burp.api.montoya.extension.ExtensionUnloadingHandler;
 import burp.api.montoya.logging.Logging;
 import burp.api.montoya.ui.UserInterface;
 import com.pythonburp.core.ExtensionContext;
+import com.pythonburp.python.RuntimeProvisioningOutcome;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.UIManager;
@@ -18,13 +19,14 @@ import java.util.List;
 import java.util.concurrent.RejectedExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class BurpPythonIdeExtensionTest {
     @Test
     void unloadHandlerClosesExtensionContext() throws Exception {
-        BurpPythonIdeExtension extension = new BurpPythonIdeExtension();
+        BurpPythonIdeExtension extension = readyExtension();
         StubMontoyaApi stub = new StubMontoyaApi();
 
         extension.initialize(stub.api());
@@ -39,7 +41,7 @@ final class BurpPythonIdeExtensionTest {
 
     @Test
     void repeatedInitializeClosesPreviousContext() throws Exception {
-        BurpPythonIdeExtension extension = new BurpPythonIdeExtension();
+        BurpPythonIdeExtension extension = readyExtension();
         StubMontoyaApi firstStub = new StubMontoyaApi();
         StubMontoyaApi secondStub = new StubMontoyaApi();
 
@@ -55,7 +57,7 @@ final class BurpPythonIdeExtensionTest {
     @Test
     void initializeDoesNotChangeHostLookAndFeel() throws Exception {
         Object before = UIManager.getLookAndFeel();
-        BurpPythonIdeExtension extension = new BurpPythonIdeExtension();
+        BurpPythonIdeExtension extension = readyExtension();
         StubMontoyaApi stub = new StubMontoyaApi();
 
         extension.initialize(stub.api());
@@ -65,12 +67,25 @@ final class BurpPythonIdeExtensionTest {
 
     @Test
     void createsAndRegistersSuiteTabOnEventDispatchThread() {
-        BurpPythonIdeExtension extension = new BurpPythonIdeExtension();
+        BurpPythonIdeExtension extension = readyExtension();
         StubMontoyaApi stub = new StubMontoyaApi();
 
         extension.initialize(stub.api());
 
         assertTrue(stub.suiteTabRegisteredOnEdt);
+    }
+
+    @Test
+    void doesNotRegisterSuiteTabWhenStartupProvisioningFails() throws Exception {
+        BurpPythonIdeExtension extension =
+            new BurpPythonIdeExtension(() -> RuntimeProvisioningOutcome.failure("admin declined"));
+        StubMontoyaApi stub = new StubMontoyaApi();
+
+        extension.initialize(stub.api());
+
+        assertEquals(0, stub.suiteTabRegistrations);
+        assertNull(contextFrom(extension));
+        assertTrue(stub.errorLogs.stream().anyMatch(message -> message.contains("admin declined")));
     }
 
     private static ExtensionContext contextFrom(BurpPythonIdeExtension extension) throws Exception {
@@ -79,13 +94,19 @@ final class BurpPythonIdeExtensionTest {
         return (ExtensionContext) field.get(extension);
     }
 
+    private static BurpPythonIdeExtension readyExtension() {
+        return new BurpPythonIdeExtension(RuntimeProvisioningOutcome::success);
+    }
+
     private static final class StubMontoyaApi {
         private final List<ExtensionUnloadingHandler> unloadingHandlers = new ArrayList<>();
+        private final List<String> errorLogs = new ArrayList<>();
         private final Extension extension = proxy(Extension.class, this::handleExtensionCall);
         private final Logging logging = proxy(Logging.class, this::handleLoggingCall);
         private final UserInterface userInterface = proxy(UserInterface.class, this::handleUserInterfaceCall);
         private final MontoyaApi api = proxy(MontoyaApi.class, this::handleApiCall);
         private boolean suiteTabRegisteredOnEdt;
+        private int suiteTabRegistrations;
 
         MontoyaApi api() {
             return api;
@@ -108,12 +129,16 @@ final class BurpPythonIdeExtensionTest {
         }
 
         private Object handleLoggingCall(Method method, Object[] args) {
+            if (method.getName().equals("logToError")) {
+                errorLogs.add(String.valueOf(args[0]));
+            }
             return defaultValue(method.getReturnType());
         }
 
         private Object handleUserInterfaceCall(Method method, Object[] args) {
             if (method.getName().equals("registerSuiteTab")) {
                 suiteTabRegisteredOnEdt = SwingUtilities.isEventDispatchThread();
+                suiteTabRegistrations++;
             }
             return defaultValue(method.getReturnType());
         }
