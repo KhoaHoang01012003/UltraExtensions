@@ -51,6 +51,21 @@ final class NmapRuntimePathsTest {
   }
 
   @Test
+  void rejectsMissingPathThatDoesNotEndInZenmapBin() throws Exception {
+    Path nmapRoot = Files.createDirectories(tempDir.resolve("Nmap"));
+    Path invalidMissingPath = nmapRoot.resolve("not-zenmap/not-bin");
+
+    IOException error =
+        assertThrows(
+            IOException.class, () -> new NmapRuntimePaths(invalidMissingPath).workerCacheRoot());
+
+    assertTrue(error.getMessage().contains("Nmap"));
+    assertTrue(
+        error.getMessage().contains(invalidMissingPath.toAbsolutePath().normalize().toString()));
+    assertTrue(Files.notExists(invalidMissingPath));
+  }
+
+  @Test
   void fixedUsesNormalizedFixedWindowsPath() throws Exception {
     assertEquals(
         NmapRuntimePaths.FIXED_ZENMAP_BIN.toAbsolutePath().normalize(),

@@ -46,7 +46,15 @@ final class NmapRuntimePaths {
   }
 
   private Path nmapInstallRoot() {
+    Path binName = zenmapBin.getFileName();
     Path zenmapRoot = zenmapBin.getParent();
-    return zenmapRoot == null ? null : zenmapRoot.getParent();
+    Path zenmapName = zenmapRoot == null ? null : zenmapRoot.getFileName();
+    if (binName == null
+        || zenmapName == null
+        || !"bin".equals(binName.toString())
+        || !"zenmap".equals(zenmapName.toString())) {
+      return null;
+    }
+    return zenmapRoot.getParent();
   }
 }
