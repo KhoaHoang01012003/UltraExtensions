@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -30,6 +31,8 @@ final class PowerShellRuntimeProvisionerTest {
                 () -> new PowerShellRuntimeProvisioner(launcher).provision(runtimeRoot));
 
         assertTrue(error.getMessage().contains("icacls failed: Access is denied."));
+        assertTrue(Files.exists(launcher.recordedScript));
+        assertTrue(Files.exists(launcher.recordedStatusFile));
     }
 
     @Test
@@ -65,6 +68,8 @@ final class PowerShellRuntimeProvisionerTest {
 
         assertTrue(error.getMessage().contains("UAC helper failed"));
         assertTrue(error.getMessage().contains("Diagnostics:"));
+        List<String> logLines = Files.readAllLines(launcher.recordedLogFile, StandardCharsets.UTF_8);
+        assertTrue(logLines.stream().anyMatch(line -> line.contains("Outer process output: UAC helper failed")));
     }
 
     @FunctionalInterface
@@ -78,6 +83,7 @@ final class PowerShellRuntimeProvisionerTest {
         private Path recordedScript;
         private Path recordedTargetDir;
         private Path recordedStatusFile;
+        private Path recordedLogFile;
 
         private TestLauncher(LauncherCallback callback) {
             this.callback = callback;
@@ -89,6 +95,7 @@ final class PowerShellRuntimeProvisionerTest {
             recordedScript = script;
             recordedTargetDir = targetDir;
             recordedStatusFile = statusFile;
+            recordedLogFile = logFile;
             return callback.launch(script, targetDir, statusFile, logFile);
         }
     }

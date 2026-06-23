@@ -30,9 +30,26 @@ final class PowerShellRuntimeProvisioner implements RuntimeProvisioner {
         Path script = Files.createTempFile(sharedStatusDirectory(), "provision-script-", ".ps1");
         Path statusFile = Files.createTempFile(sharedStatusDirectory(), "provision-status-", ".txt");
         Path logFile = Files.createTempFile(sharedStatusDirectory(), "provision-log-", ".txt");
+        boolean success = false;
         try {
             Files.writeString(script, helperScript(), StandardCharsets.UTF_8);
+            Files.writeString(
+                logFile,
+                """
+                Java parent provisioning bootstrap
+                Script: %s
+                TargetDir: %s
+                StatusFile: %s
+                """.formatted(script, runtimeRoot, statusFile),
+                StandardCharsets.UTF_8);
             ProcessLaunchResult result = launcher.launch(script, runtimeRoot, statusFile, logFile);
+            if (!result.output().isBlank()) {
+                Files.writeString(
+                    logFile,
+                    System.lineSeparator() + "Outer process output: " + result.output().trim() + System.lineSeparator(),
+                    StandardCharsets.UTF_8,
+                    java.nio.file.StandardOpenOption.APPEND);
+            }
             int exitCode = result.exitCode();
             String status = readStatus(statusFile);
             if (exitCode != 0) {
@@ -57,10 +74,13 @@ final class PowerShellRuntimeProvisioner implements RuntimeProvisioner {
                         + ". Diagnostics: "
                         + logFile);
             }
-            Files.deleteIfExists(logFile);
+            success = true;
         } finally {
-            Files.deleteIfExists(script);
-            Files.deleteIfExists(statusFile);
+            if (success) {
+                Files.deleteIfExists(script);
+                Files.deleteIfExists(statusFile);
+                Files.deleteIfExists(logFile);
+            }
         }
     }
 
