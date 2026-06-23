@@ -5,6 +5,7 @@ import com.pythonburp.storage.ExtensionDataPaths;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Objects;
 import java.util.function.Supplier;
 
 public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
@@ -23,8 +24,8 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     }
 
     CPythonRuntimeFactory(NmapRuntimePaths runtimePaths, ExtensionDataPaths paths) {
-        this.runtimePaths = runtimePaths;
-        this.paths = paths;
+        this.runtimePaths = Objects.requireNonNull(runtimePaths, "runtimePaths");
+        this.paths = Objects.requireNonNull(paths, "paths");
     }
 
     @Override
