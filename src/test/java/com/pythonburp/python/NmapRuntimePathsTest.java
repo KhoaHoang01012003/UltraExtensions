@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
@@ -25,13 +26,33 @@ final class NmapRuntimePathsTest {
   }
 
   @Test
+  void normalizesZenmapBinPathInConstructor() throws Exception {
+    Path normalizedNmapBin = Files.createDirectories(tempDir.resolve("Nmap/zenmap/bin"));
+    Path nmapBinWithDotSegments = normalizedNmapBin.resolve("../bin/./");
+
+    Path runtimeCacheRoot = new NmapRuntimePaths(nmapBinWithDotSegments).workerCacheRoot();
+
+    assertEquals(
+        normalizedNmapBin.resolve("BurpPythonIDE").resolve("cpython-worker").normalize(),
+        runtimeCacheRoot);
+  }
+
+  @Test
+  void fixedUsesNormalizedFixedWindowsPath() throws Exception {
+    assertEquals(
+        NmapRuntimePaths.FIXED_ZENMAP_BIN.toAbsolutePath().normalize(),
+        zenmapBinOf(NmapRuntimePaths.fixed()));
+  }
+
+  @Test
   void rejectsMissingZenmapBinDirectory() {
+    Path missingPath = tempDir.resolve("missing/zenmap/bin");
     IOException error =
-        assertThrows(
-            IOException.class,
-            () -> new NmapRuntimePaths(tempDir.resolve("missing/zenmap/bin")).workerCacheRoot());
+        assertThrows(IOException.class, () -> new NmapRuntimePaths(missingPath).workerCacheRoot());
 
     assertTrue(error.getMessage().contains("Nmap"));
+    assertTrue(
+        error.getMessage().contains(missingPath.toAbsolutePath().normalize().toString()));
   }
 
   @Test
@@ -42,5 +63,12 @@ final class NmapRuntimePathsTest {
         assertThrows(IOException.class, () -> new NmapRuntimePaths(file).workerCacheRoot());
 
     assertTrue(error.getMessage().contains("directory"));
+    assertTrue(error.getMessage().contains(file.toAbsolutePath().normalize().toString()));
+  }
+
+  private static Path zenmapBinOf(NmapRuntimePaths runtimePaths) throws Exception {
+    Field zenmapBinField = NmapRuntimePaths.class.getDeclaredField("zenmapBin");
+    zenmapBinField.setAccessible(true);
+    return (Path) zenmapBinField.get(runtimePaths);
   }
 }
