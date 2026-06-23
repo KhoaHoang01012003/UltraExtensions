@@ -19,6 +19,10 @@ final class NmapRuntimePaths {
     return new NmapRuntimePaths(FIXED_ZENMAP_BIN);
   }
 
+  Path zenmapBin() {
+    return zenmapBin;
+  }
+
   Path workerCacheRoot() throws IOException {
     if (!Files.exists(zenmapBin)) {
       throw new IOException(

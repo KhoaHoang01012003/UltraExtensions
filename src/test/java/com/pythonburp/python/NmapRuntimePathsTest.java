@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
-import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
@@ -41,7 +40,7 @@ final class NmapRuntimePathsTest {
   void fixedUsesNormalizedFixedWindowsPath() throws Exception {
     assertEquals(
         NmapRuntimePaths.FIXED_ZENMAP_BIN.toAbsolutePath().normalize(),
-        zenmapBinOf(NmapRuntimePaths.fixed()));
+        NmapRuntimePaths.fixed().zenmapBin());
   }
 
   @Test
@@ -64,11 +63,5 @@ final class NmapRuntimePathsTest {
 
     assertTrue(error.getMessage().contains("directory"));
     assertTrue(error.getMessage().contains(file.toAbsolutePath().normalize().toString()));
-  }
-
-  private static Path zenmapBinOf(NmapRuntimePaths runtimePaths) throws Exception {
-    Field zenmapBinField = NmapRuntimePaths.class.getDeclaredField("zenmapBin");
-    zenmapBinField.setAccessible(true);
-    return (Path) zenmapBinField.get(runtimePaths);
   }
 }
