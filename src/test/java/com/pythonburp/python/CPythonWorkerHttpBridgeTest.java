@@ -3,13 +3,19 @@ package com.pythonburp.python;
 import com.pythonburp.bridge.BurpBridge;
 import com.pythonburp.bridge.HttpBridge;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class CPythonWorkerHttpBridgeTest {
+    @TempDir
+    Path tempDir;
+
     @Test
     void pythonBurpHttpSendUsesJavaHttpBridge() throws Exception {
         BurpBridge bridge = new BurpBridge((method, url, body) -> {
@@ -18,7 +24,11 @@ final class CPythonWorkerHttpBridgeTest {
             assertEquals("payload", body);
             return new HttpBridge.HttpResult(202, "accepted");
         });
-        try (PythonRuntime runtime = new CPythonRuntimeFactory().get(bridge)) {
+        Path nmapBin = Files.createDirectories(tempDir.resolve("Nmap/zenmap/bin"));
+        try (PythonRuntime runtime = new CPythonRuntimeFactory(
+            new NmapRuntimePaths(nmapBin),
+            com.pythonburp.storage.ExtensionDataPaths.windowsDefault()
+        ).get(bridge)) {
             ScriptRunResult result = runtime.execute("""
                 from burp import http
                 resp = http.send("POST", "https://target.example/api", "payload")

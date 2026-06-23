@@ -81,7 +81,8 @@ final class CPythonRuntimeFactoryTest {
     NmapRuntimePaths runtimePaths =
         new NmapRuntimePaths(tempDir.resolve("Nmap/zenmap/bin"));
 
-    assertThrows(NullPointerException.class, () -> new CPythonRuntimeFactory(null, paths));
+    assertThrows(NullPointerException.class, () -> new CPythonRuntimeFactory((Path) null, paths));
+    assertThrows(NullPointerException.class, () -> new CPythonRuntimeFactory((NmapRuntimePaths) null, paths));
     assertThrows(NullPointerException.class, () -> new CPythonRuntimeFactory(runtimePaths, null));
   }
 }

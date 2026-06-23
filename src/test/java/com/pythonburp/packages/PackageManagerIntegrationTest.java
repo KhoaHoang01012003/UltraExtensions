@@ -32,7 +32,8 @@ final class PackageManagerIntegrationTest {
     @Test
     void installsLocalWheelAndImportsItFromNewWorker() throws Exception {
         ExtensionDataPaths paths = new ExtensionDataPaths(tempDir.resolve("data"));
-        CPythonRuntimeFactory runtimeFactory = new CPythonRuntimeFactory(paths);
+        Path nmapBin = Files.createDirectories(tempDir.resolve("Nmap/zenmap/bin"));
+        CPythonRuntimeFactory runtimeFactory = new CPythonRuntimeFactory(nmapBin, paths);
         RuntimeActivityCoordinator coordinator = new RuntimeActivityCoordinator();
         PackageManagerService service = new PackageManagerService(
             paths, coordinator, new SharedPackageEnvironment(paths),

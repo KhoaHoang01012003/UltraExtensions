@@ -23,6 +23,10 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
         this(NmapRuntimePaths.fixed(), paths);
     }
 
+    public CPythonRuntimeFactory(Path zenmapBin, ExtensionDataPaths paths) {
+        this(new NmapRuntimePaths(Objects.requireNonNull(zenmapBin, "zenmapBin")), paths);
+    }
+
     CPythonRuntimeFactory(NmapRuntimePaths runtimePaths, ExtensionDataPaths paths) {
         this.runtimePaths = Objects.requireNonNull(runtimePaths, "runtimePaths");
         this.paths = Objects.requireNonNull(paths, "paths");

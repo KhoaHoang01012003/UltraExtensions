@@ -25,7 +25,7 @@ final class NativePackExtractorTest {
                 "amd64",
                 "test-native-pack/hello.txt",
                 "native/windows-x64-core/hello.txt",
-                "b31d6834bd48fb6fdcfed61283c582c7dc2ba71d8d5aa2da7fd4b916b10a94e2"
+                "f4857191504c9a665d80d2d2e867cc55d762d40cb2f5475b60ab1cfcc23091f0"
             ),
             new NativePackResource(
                 "linux-x64-core",
@@ -33,7 +33,7 @@ final class NativePackExtractorTest {
                 "amd64",
                 "test-native-pack/hello.txt",
                 "native/linux-x64-core/hello.txt",
-                "b31d6834bd48fb6fdcfed61283c582c7dc2ba71d8d5aa2da7fd4b916b10a94e2"
+                "f4857191504c9a665d80d2d2e867cc55d762d40cb2f5475b60ab1cfcc23091f0"
             )
         ));
         NativePackExtractor extractor = new NativePackExtractor(
