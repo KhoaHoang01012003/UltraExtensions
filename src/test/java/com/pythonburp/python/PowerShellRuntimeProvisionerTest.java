@@ -44,6 +44,9 @@ final class PowerShellRuntimeProvisionerTest {
 
         assertEquals(runtimeRoot, launcher.recordedTargetDir);
         assertTrue(launcher.recordedScript != null);
+        assertTrue(
+            launcher.recordedStatusFile.startsWith(PowerShellRuntimeProvisioner.sharedStatusDirectory()),
+            launcher.recordedStatusFile.toString());
     }
 
     @Test
@@ -69,6 +72,7 @@ final class PowerShellRuntimeProvisionerTest {
         private final LauncherCallback callback;
         private Path recordedScript;
         private Path recordedTargetDir;
+        private Path recordedStatusFile;
 
         private TestLauncher(LauncherCallback callback) {
             this.callback = callback;
@@ -79,6 +83,7 @@ final class PowerShellRuntimeProvisionerTest {
             throws IOException, InterruptedException {
             recordedScript = script;
             recordedTargetDir = targetDir;
+            recordedStatusFile = statusFile;
             return callback.launch(script, targetDir, statusFile);
         }
     }

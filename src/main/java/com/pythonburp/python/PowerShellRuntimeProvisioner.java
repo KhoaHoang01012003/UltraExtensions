@@ -8,6 +8,12 @@ import java.util.Objects;
 
 final class PowerShellRuntimeProvisioner implements RuntimeProvisioner {
     private static final String USERS_SID = "*S-1-5-32-545";
+    private static final Path SHARED_STATUS_DIRECTORY =
+        Path.of(
+            System.getenv("PUBLIC") == null || System.getenv("PUBLIC").isBlank()
+                ? "C:\\Users\\Public"
+                : System.getenv("PUBLIC"),
+            "BurpPythonIDE");
     private final ProcessLauncher launcher;
 
     PowerShellRuntimeProvisioner() {
@@ -21,7 +27,8 @@ final class PowerShellRuntimeProvisioner implements RuntimeProvisioner {
     @Override
     public void provision(Path runtimeRoot) throws IOException, InterruptedException {
         Path script = Files.createTempFile("burp-python-provision-", ".ps1");
-        Path statusFile = Files.createTempFile("burp-python-provision-status-", ".txt");
+        Files.createDirectories(sharedStatusDirectory());
+        Path statusFile = Files.createTempFile(sharedStatusDirectory(), "provision-status-", ".txt");
         try {
             Files.writeString(script, helperScript(), StandardCharsets.UTF_8);
             ProcessLaunchResult result = launcher.launch(script, runtimeRoot, statusFile);
@@ -89,6 +96,10 @@ final class PowerShellRuntimeProvisioner implements RuntimeProvisioner {
             return "";
         }
         return Files.readString(statusFile, StandardCharsets.UTF_8).trim();
+    }
+
+    static Path sharedStatusDirectory() {
+        return SHARED_STATUS_DIRECTORY;
     }
 
     private static String psQuote(String value) {
