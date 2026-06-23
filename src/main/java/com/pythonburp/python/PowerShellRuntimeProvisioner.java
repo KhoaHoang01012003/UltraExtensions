@@ -26,24 +26,38 @@ final class PowerShellRuntimeProvisioner implements RuntimeProvisioner {
 
     @Override
     public void provision(Path runtimeRoot) throws IOException, InterruptedException {
-        Path script = Files.createTempFile("burp-python-provision-", ".ps1");
         Files.createDirectories(sharedStatusDirectory());
+        Path script = Files.createTempFile(sharedStatusDirectory(), "provision-script-", ".ps1");
         Path statusFile = Files.createTempFile(sharedStatusDirectory(), "provision-status-", ".txt");
+        Path logFile = Files.createTempFile(sharedStatusDirectory(), "provision-log-", ".txt");
         try {
             Files.writeString(script, helperScript(), StandardCharsets.UTF_8);
-            ProcessLaunchResult result = launcher.launch(script, runtimeRoot, statusFile);
+            ProcessLaunchResult result = launcher.launch(script, runtimeRoot, statusFile, logFile);
             int exitCode = result.exitCode();
             String status = readStatus(statusFile);
             if (exitCode != 0) {
                 String details = status.isBlank() ? result.output().trim() : status;
                 throw new IOException(
                     details.isBlank()
-                        ? "Administrator provisioning exited with code " + exitCode
-                        : "Administrator provisioning exited with code " + exitCode + ": " + details);
+                        ? "Administrator provisioning exited with code "
+                            + exitCode
+                            + ". Diagnostics: "
+                            + logFile
+                        : "Administrator provisioning exited with code "
+                            + exitCode
+                            + ": "
+                            + details
+                            + ". Diagnostics: "
+                            + logFile);
             }
             if (!status.isBlank() && !"OK".equals(status)) {
-                throw new IOException("Administrator provisioning reported unexpected status: " + status);
+                throw new IOException(
+                    "Administrator provisioning reported unexpected status: "
+                        + status
+                        + ". Diagnostics: "
+                        + logFile);
             }
+            Files.deleteIfExists(logFile);
         } finally {
             Files.deleteIfExists(script);
             Files.deleteIfExists(statusFile);
@@ -56,15 +70,20 @@ final class PowerShellRuntimeProvisioner implements RuntimeProvisioner {
                 [Parameter(Mandatory = $true)]
                 [string]$TargetDir,
                 [Parameter(Mandatory = $true)]
-                [string]$StatusFile
+                [string]$StatusFile,
+                [Parameter(Mandatory = $true)]
+                [string]$LogFile
             )
             $ErrorActionPreference = 'Stop'
             try {
+                Set-Content -Path $LogFile -Value ("Starting provisioning for " + $TargetDir) -Encoding UTF8
                 New-Item -ItemType Directory -Path $TargetDir -Force | Out-Null
+                Add-Content -Path $LogFile -Value 'Created or confirmed runtime directory.'
                 $icaclsOutput = & icacls.exe $TargetDir /grant '%s:(OI)(CI)M' /c 2>&1
                 if ($LASTEXITCODE -ne 0) {
                     throw ('icacls failed: ' + (($icaclsOutput | Out-String).Trim()))
                 }
+                Add-Content -Path $LogFile -Value 'icacls completed successfully.'
                 Set-Content -Path $StatusFile -Value 'OK' -Encoding UTF8
                 exit 0
             } catch {
@@ -72,13 +91,14 @@ final class PowerShellRuntimeProvisioner implements RuntimeProvisioner {
                 if ([string]::IsNullOrWhiteSpace($message)) {
                     $message = ($_ | Out-String).Trim()
                 }
+                Add-Content -Path $LogFile -Value $message
                 Set-Content -Path $StatusFile -Value $message -Encoding UTF8
                 exit 1
             }
             """.formatted(USERS_SID);
     }
 
-    private static String startProcessCommand(Path script, Path runtimeRoot, Path statusFile) {
+    private static String startProcessCommand(Path script, Path runtimeRoot, Path statusFile, Path logFile) {
         return "$ErrorActionPreference = 'Stop'; "
             + "$proc = Start-Process -FilePath 'powershell.exe' -Verb RunAs -PassThru -Wait "
             + "-ArgumentList @("
@@ -86,7 +106,8 @@ final class PowerShellRuntimeProvisioner implements RuntimeProvisioner {
             + "'-ExecutionPolicy','Bypass',"
             + "'-File','" + psQuote(script.toString()) + "',"
             + "'-TargetDir','" + psQuote(runtimeRoot.toString()) + "',"
-            + "'-StatusFile','" + psQuote(statusFile.toString()) + "'"
+            + "'-StatusFile','" + psQuote(statusFile.toString()) + "',"
+            + "'-LogFile','" + psQuote(logFile.toString()) + "'"
             + "); "
             + "exit $proc.ExitCode";
     }
@@ -107,13 +128,13 @@ final class PowerShellRuntimeProvisioner implements RuntimeProvisioner {
     }
 
     interface ProcessLauncher {
-        ProcessLaunchResult launch(Path script, Path targetDir, Path statusFile)
+        ProcessLaunchResult launch(Path script, Path targetDir, Path statusFile, Path logFile)
             throws IOException, InterruptedException;
     }
 
     private static final class DefaultProcessLauncher implements ProcessLauncher {
         @Override
-        public ProcessLaunchResult launch(Path script, Path targetDir, Path statusFile)
+        public ProcessLaunchResult launch(Path script, Path targetDir, Path statusFile, Path logFile)
             throws IOException, InterruptedException {
             Process process = new ProcessBuilder(
                 "powershell.exe",
@@ -121,7 +142,7 @@ final class PowerShellRuntimeProvisioner implements RuntimeProvisioner {
                 "-ExecutionPolicy",
                 "Bypass",
                 "-Command",
-                startProcessCommand(script, targetDir, statusFile))
+                startProcessCommand(script, targetDir, statusFile, logFile))
                 .redirectErrorStream(true)
                 .start();
             int exitCode = process.waitFor();

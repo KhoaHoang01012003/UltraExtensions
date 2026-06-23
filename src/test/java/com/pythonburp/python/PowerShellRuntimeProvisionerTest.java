@@ -19,7 +19,7 @@ final class PowerShellRuntimeProvisionerTest {
     @Test
     void surfacesDetailedStatusFileContentWhenElevatedProcessFails() throws Exception {
         Path runtimeRoot = tempDir.resolve("Nmap/zenmap/bin/BurpPythonIDE");
-        TestLauncher launcher = new TestLauncher((script, targetDir, statusFile) -> {
+        TestLauncher launcher = new TestLauncher((script, targetDir, statusFile, logFile) -> {
             Files.writeString(statusFile, "icacls failed: Access is denied.", StandardCharsets.UTF_8);
             return new ProcessLaunchResult(1, "");
         });
@@ -35,7 +35,7 @@ final class PowerShellRuntimeProvisionerTest {
     @Test
     void acceptsSuccessfulProvisioningWhenStatusFileReportsOk() throws Exception {
         Path runtimeRoot = tempDir.resolve("Nmap/zenmap/bin/BurpPythonIDE");
-        TestLauncher launcher = new TestLauncher((script, targetDir, statusFile) -> {
+        TestLauncher launcher = new TestLauncher((script, targetDir, statusFile, logFile) -> {
             Files.writeString(statusFile, "OK", StandardCharsets.UTF_8);
             return new ProcessLaunchResult(0, "");
         });
@@ -45,6 +45,9 @@ final class PowerShellRuntimeProvisionerTest {
         assertEquals(runtimeRoot, launcher.recordedTargetDir);
         assertTrue(launcher.recordedScript != null);
         assertTrue(
+            launcher.recordedScript.startsWith(PowerShellRuntimeProvisioner.sharedStatusDirectory()),
+            launcher.recordedScript.toString());
+        assertTrue(
             launcher.recordedStatusFile.startsWith(PowerShellRuntimeProvisioner.sharedStatusDirectory()),
             launcher.recordedStatusFile.toString());
     }
@@ -53,7 +56,7 @@ final class PowerShellRuntimeProvisionerTest {
     void fallsBackToOuterProcessOutputWhenStatusFileIsMissing() throws Exception {
         Path runtimeRoot = tempDir.resolve("Nmap/zenmap/bin/BurpPythonIDE");
         TestLauncher launcher =
-            new TestLauncher((script, targetDir, statusFile) -> new ProcessLaunchResult(1, "UAC helper failed"));
+            new TestLauncher((script, targetDir, statusFile, logFile) -> new ProcessLaunchResult(1, "UAC helper failed"));
 
         IOException error =
             assertThrows(
@@ -61,11 +64,13 @@ final class PowerShellRuntimeProvisionerTest {
                 () -> new PowerShellRuntimeProvisioner(launcher).provision(runtimeRoot));
 
         assertTrue(error.getMessage().contains("UAC helper failed"));
+        assertTrue(error.getMessage().contains("Diagnostics:"));
     }
 
     @FunctionalInterface
     private interface LauncherCallback {
-        ProcessLaunchResult launch(Path script, Path targetDir, Path statusFile) throws IOException, InterruptedException;
+        ProcessLaunchResult launch(Path script, Path targetDir, Path statusFile, Path logFile)
+            throws IOException, InterruptedException;
     }
 
     private static final class TestLauncher implements PowerShellRuntimeProvisioner.ProcessLauncher {
@@ -79,12 +84,12 @@ final class PowerShellRuntimeProvisionerTest {
         }
 
         @Override
-        public ProcessLaunchResult launch(Path script, Path targetDir, Path statusFile)
+        public ProcessLaunchResult launch(Path script, Path targetDir, Path statusFile, Path logFile)
             throws IOException, InterruptedException {
             recordedScript = script;
             recordedTargetDir = targetDir;
             recordedStatusFile = statusFile;
-            return callback.launch(script, targetDir, statusFile);
+            return callback.launch(script, targetDir, statusFile, logFile);
         }
     }
 }
