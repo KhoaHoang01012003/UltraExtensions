@@ -1,0 +1,169 @@
+plugins {
+    id "java"
+}
+
+group = "com.pythonburp"
+version = "0.3.0"
+
+ext {
+    cpythonVersion = "3.12.10"
+    cpythonPopularPackages = [
+        "requests",
+        "httpx",
+        "beautifulsoup4",
+        "html5lib",
+        "lxml",
+        "defusedxml",
+        "xmltodict",
+        "python-dateutil",
+        "charset-normalizer",
+        "idna",
+        "tabulate",
+        "rich",
+        "colorama",
+        "PyYAML",
+        "pyjwt",
+        "pypdf",
+        "passlib",
+        "cryptography",
+        "pycryptodome",
+        "dnspython",
+        "websockets",
+        "aiohttp",
+        "pydantic",
+        "orjson",
+        "zstandard",
+        "pillow",
+        "numpy",
+        "pandas",
+        "scipy",
+        "scapy",
+        "parsel",
+        "cssselect"
+    ]
+}
+
+dependencies {
+    compileOnly "net.portswigger.burp.extensions:montoya-api:2026.4"
+    testCompileOnly "net.portswigger.burp.extensions:montoya-api:2026.4"
+    testRuntimeOnly "net.portswigger.burp.extensions:montoya-api:2026.4"
+
+    implementation "org.bouncycastle:bcprov-jdk18on:1.84"
+    implementation "org.bouncycastle:bcpkix-jdk18on:1.84"
+
+    testImplementation platform("org.junit:junit-bom:6.1.0")
+    testImplementation "org.junit.jupiter:junit-jupiter"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
+    options.release = 21
+}
+
+test {
+    useJUnitPlatform()
+    exclude "**/PackageSmokeTest.class"
+}
+
+sourceSets {
+    main {
+        resources {
+            srcDir(layout.buildDirectory.dir("generated/cpython-runtime"))
+        }
+    }
+}
+
+tasks.register("prepareCpythonBundle", Exec) {
+    description = "Downloads CPython embeddable runtime and installs the bundled package profile."
+    group = "build"
+    def outputDir = layout.buildDirectory.dir("generated/cpython-runtime")
+    def downloadDir = layout.buildDirectory.dir("downloads/cpython")
+    def packages = cpythonPopularPackages.join(",")
+
+    inputs.property("cpythonVersion", cpythonVersion)
+    inputs.property("packages", packages)
+    inputs.file("scripts/prepare-cpython-bundle.ps1")
+    inputs.dir("src/main/python-worker")
+    outputs.dir(outputDir.map { it.dir("cpython/windows-x64") })
+
+    commandLine(
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        file("scripts/prepare-cpython-bundle.ps1").absolutePath,
+        "-PythonVersion",
+        cpythonVersion,
+        "-OutputDir",
+        outputDir.get().asFile.absolutePath,
+        "-DownloadDir",
+        downloadDir.get().asFile.absolutePath,
+        "-Packages",
+        packages,
+        "-WorkerModulesDir",
+        file("src/main/python-worker").absolutePath
+    )
+}
+
+tasks.named("processResources") {
+    dependsOn tasks.named("prepareCpythonBundle")
+}
+
+tasks.register("packageSmokeTest", Test) {
+    description = "Runs CPython worker import and package compatibility smoke tests."
+    group = "verification"
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    include "**/PackageSmokeTest.class"
+    shouldRunAfter test
+}
+
+tasks.register("fatJar", Jar) {
+    group = "build"
+    description = "Builds the Burp-loadable single JAR extension."
+    archiveClassifier = "all"
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    from sourceSets.main.output
+    from {
+        configurations.runtimeClasspath.findAll { dependency ->
+            dependency.isDirectory() || dependency.name.endsWith(".jar")
+        }.collect { dependency ->
+            dependency.isDirectory() ? dependency : zipTree(dependency)
+        }
+    }
+
+    exclude "META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA"
+
+    manifest {
+        attributes(
+            "Implementation-Title": "Burp Python IDE Enhanced",
+            "Implementation-Version": project.version,
+            "Multi-Release": "true"
+        )
+    }
+}
+
+tasks.register("fatJarIsolatedSmoke", JavaExec) {
+    description = "Loads the fat JAR through an isolated classloader and runs a CPython worker smoke script."
+    group = "verification"
+    dependsOn tasks.named("fatJar"), tasks.named("compileTestJava")
+    classpath = sourceSets.test.output.classesDirs
+    mainClass = "com.pythonburp.fatjar.IsolatedFatJarSmoke"
+    shouldRunAfter tasks.named("packageSmokeTest")
+    doFirst {
+        args = [tasks.named("fatJar").get().archiveFile.get().asFile.absolutePath]
+    }
+}
+
+tasks.named("build") {
+    dependsOn tasks.named("fatJar")
+}
+
+check {
+    dependsOn tasks.named("packageSmokeTest")
+    dependsOn tasks.named("fatJarIsolatedSmoke")
+}
