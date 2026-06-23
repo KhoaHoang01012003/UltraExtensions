@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Base64;
 import java.util.Objects;
 
 final class PowerShellRuntimeProvisioner implements RuntimeProvisioner {
@@ -27,22 +28,21 @@ final class PowerShellRuntimeProvisioner implements RuntimeProvisioner {
     @Override
     public void provision(Path runtimeRoot) throws IOException, InterruptedException {
         Files.createDirectories(sharedStatusDirectory());
-        Path script = Files.createTempFile(sharedStatusDirectory(), "provision-script-", ".ps1");
         Path statusFile = Files.createTempFile(sharedStatusDirectory(), "provision-status-", ".txt");
         Path logFile = Files.createTempFile(sharedStatusDirectory(), "provision-log-", ".txt");
         boolean success = false;
         try {
-            Files.writeString(script, helperScript(), StandardCharsets.UTF_8);
+            String childCommand = helperScript(runtimeRoot, statusFile, logFile);
             Files.writeString(
                 logFile,
                 """
                 Java parent provisioning bootstrap
-                Script: %s
                 TargetDir: %s
                 StatusFile: %s
-                """.formatted(script, runtimeRoot, statusFile),
+                LaunchMode: EncodedCommand
+                """.formatted(runtimeRoot, statusFile),
                 StandardCharsets.UTF_8);
-            ProcessLaunchResult result = launcher.launch(script, runtimeRoot, statusFile, logFile);
+            ProcessLaunchResult result = launcher.launch(runtimeRoot, statusFile, logFile, childCommand);
             if (!result.output().isBlank()) {
                 Files.writeString(
                     logFile,
@@ -77,25 +77,19 @@ final class PowerShellRuntimeProvisioner implements RuntimeProvisioner {
             success = true;
         } finally {
             if (success) {
-                Files.deleteIfExists(script);
                 Files.deleteIfExists(statusFile);
                 Files.deleteIfExists(logFile);
             }
         }
     }
 
-    private static String helperScript() {
+    private static String helperScript(Path runtimeRoot, Path statusFile, Path logFile) {
         return """
-            param(
-                [Parameter(Mandatory = $true)]
-                [string]$TargetDir,
-                [Parameter(Mandatory = $true)]
-                [string]$StatusFile,
-                [Parameter(Mandatory = $true)]
-                [string]$LogFile
-            )
             $ErrorActionPreference = 'Stop'
             try {
+                $TargetDir = '%s'
+                $StatusFile = '%s'
+                $LogFile = '%s'
                 Set-Content -Path $LogFile -Value ("Starting provisioning for " + $TargetDir) -Encoding UTF8
                 New-Item -ItemType Directory -Path $TargetDir -Force | Out-Null
                 Add-Content -Path $LogFile -Value 'Created or confirmed runtime directory.'
@@ -115,19 +109,22 @@ final class PowerShellRuntimeProvisioner implements RuntimeProvisioner {
                 Set-Content -Path $StatusFile -Value $message -Encoding UTF8
                 exit 1
             }
-            """.formatted(USERS_SID);
+            """.formatted(
+            psQuote(runtimeRoot.toString()),
+            psQuote(statusFile.toString()),
+            psQuote(logFile.toString()),
+            USERS_SID);
     }
 
-    private static String startProcessCommand(Path script, Path runtimeRoot, Path statusFile, Path logFile) {
+    private static String startProcessCommand(String childCommand) {
+        String encodedCommand =
+            Base64.getEncoder().encodeToString(childCommand.getBytes(StandardCharsets.UTF_16LE));
         return "$ErrorActionPreference = 'Stop'; "
             + "$proc = Start-Process -FilePath 'powershell.exe' -Verb RunAs -PassThru -Wait "
             + "-ArgumentList @("
             + "'-NoProfile',"
             + "'-ExecutionPolicy','Bypass',"
-            + "'-File','" + psQuote(script.toString()) + "',"
-            + "'-TargetDir','" + psQuote(runtimeRoot.toString()) + "',"
-            + "'-StatusFile','" + psQuote(statusFile.toString()) + "',"
-            + "'-LogFile','" + psQuote(logFile.toString()) + "'"
+            + "'-EncodedCommand','" + encodedCommand + "'"
             + "); "
             + "exit $proc.ExitCode";
     }
@@ -148,13 +145,13 @@ final class PowerShellRuntimeProvisioner implements RuntimeProvisioner {
     }
 
     interface ProcessLauncher {
-        ProcessLaunchResult launch(Path script, Path targetDir, Path statusFile, Path logFile)
+        ProcessLaunchResult launch(Path targetDir, Path statusFile, Path logFile, String childCommand)
             throws IOException, InterruptedException;
     }
 
     private static final class DefaultProcessLauncher implements ProcessLauncher {
         @Override
-        public ProcessLaunchResult launch(Path script, Path targetDir, Path statusFile, Path logFile)
+        public ProcessLaunchResult launch(Path targetDir, Path statusFile, Path logFile, String childCommand)
             throws IOException, InterruptedException {
             Process process = new ProcessBuilder(
                 "powershell.exe",
@@ -162,7 +159,7 @@ final class PowerShellRuntimeProvisioner implements RuntimeProvisioner {
                 "-ExecutionPolicy",
                 "Bypass",
                 "-Command",
-                startProcessCommand(script, targetDir, statusFile, logFile))
+                startProcessCommand(childCommand))
                 .redirectErrorStream(true)
                 .start();
             int exitCode = process.waitFor();

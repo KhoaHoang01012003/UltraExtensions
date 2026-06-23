@@ -20,25 +20,24 @@ final class PowerShellRuntimeProvisionerTest {
     @Test
     void surfacesDetailedStatusFileContentWhenElevatedProcessFails() throws Exception {
         Path runtimeRoot = tempDir.resolve("Nmap/zenmap/bin/BurpPythonIDE");
-        TestLauncher launcher = new TestLauncher((script, targetDir, statusFile, logFile) -> {
+        TestLauncher launcher = new TestLauncher((targetDir, statusFile, logFile, childCommand) -> {
             Files.writeString(statusFile, "icacls failed: Access is denied.", StandardCharsets.UTF_8);
             return new ProcessLaunchResult(1, "");
         });
 
         IOException error =
-            assertThrows(
+        assertThrows(
                 IOException.class,
                 () -> new PowerShellRuntimeProvisioner(launcher).provision(runtimeRoot));
 
         assertTrue(error.getMessage().contains("icacls failed: Access is denied."));
-        assertTrue(Files.exists(launcher.recordedScript));
         assertTrue(Files.exists(launcher.recordedStatusFile));
     }
 
     @Test
     void acceptsSuccessfulProvisioningWhenStatusFileReportsOk() throws Exception {
         Path runtimeRoot = tempDir.resolve("Nmap/zenmap/bin/BurpPythonIDE");
-        TestLauncher launcher = new TestLauncher((script, targetDir, statusFile, logFile) -> {
+        TestLauncher launcher = new TestLauncher((targetDir, statusFile, logFile, childCommand) -> {
             Files.writeString(statusFile, "OK", StandardCharsets.UTF_8);
             return new ProcessLaunchResult(0, "");
         });
@@ -46,20 +45,17 @@ final class PowerShellRuntimeProvisionerTest {
         new PowerShellRuntimeProvisioner(launcher).provision(runtimeRoot);
 
         assertEquals(runtimeRoot, launcher.recordedTargetDir);
-        assertTrue(launcher.recordedScript != null);
-        assertTrue(
-            launcher.recordedScript.startsWith(PowerShellRuntimeProvisioner.sharedStatusDirectory()),
-            launcher.recordedScript.toString());
         assertTrue(
             launcher.recordedStatusFile.startsWith(PowerShellRuntimeProvisioner.sharedStatusDirectory()),
             launcher.recordedStatusFile.toString());
+        assertTrue(launcher.recordedChildCommand.contains("Starting provisioning for "));
     }
 
     @Test
     void fallsBackToOuterProcessOutputWhenStatusFileIsMissing() throws Exception {
         Path runtimeRoot = tempDir.resolve("Nmap/zenmap/bin/BurpPythonIDE");
         TestLauncher launcher =
-            new TestLauncher((script, targetDir, statusFile, logFile) -> new ProcessLaunchResult(1, "UAC helper failed"));
+            new TestLauncher((targetDir, statusFile, logFile, childCommand) -> new ProcessLaunchResult(1, "UAC helper failed"));
 
         IOException error =
             assertThrows(
@@ -74,29 +70,29 @@ final class PowerShellRuntimeProvisionerTest {
 
     @FunctionalInterface
     private interface LauncherCallback {
-        ProcessLaunchResult launch(Path script, Path targetDir, Path statusFile, Path logFile)
+        ProcessLaunchResult launch(Path targetDir, Path statusFile, Path logFile, String childCommand)
             throws IOException, InterruptedException;
     }
 
     private static final class TestLauncher implements PowerShellRuntimeProvisioner.ProcessLauncher {
         private final LauncherCallback callback;
-        private Path recordedScript;
         private Path recordedTargetDir;
         private Path recordedStatusFile;
         private Path recordedLogFile;
+        private String recordedChildCommand;
 
         private TestLauncher(LauncherCallback callback) {
             this.callback = callback;
         }
 
         @Override
-        public ProcessLaunchResult launch(Path script, Path targetDir, Path statusFile, Path logFile)
+        public ProcessLaunchResult launch(Path targetDir, Path statusFile, Path logFile, String childCommand)
             throws IOException, InterruptedException {
-            recordedScript = script;
             recordedTargetDir = targetDir;
             recordedStatusFile = statusFile;
             recordedLogFile = logFile;
-            return callback.launch(script, targetDir, statusFile, logFile);
+            recordedChildCommand = childCommand;
+            return callback.launch(targetDir, statusFile, logFile, childCommand);
         }
     }
 }
