@@ -52,6 +52,19 @@ final class PowerShellRuntimeProvisionerTest {
     }
 
     @Test
+    void acceptsSuccessfulProvisioningWhenStatusFileHasUtf8Bom() throws Exception {
+        Path runtimeRoot = tempDir.resolve("Nmap/zenmap/bin/BurpPythonIDE");
+        TestLauncher launcher = new TestLauncher((targetDir, statusFile, logFile, childCommand) -> {
+            Files.writeString(statusFile, "\uFEFFOK", StandardCharsets.UTF_8);
+            return new ProcessLaunchResult(0, "");
+        });
+
+        new PowerShellRuntimeProvisioner(launcher).provision(runtimeRoot);
+
+        assertEquals(runtimeRoot, launcher.recordedTargetDir);
+    }
+
+    @Test
     void fallsBackToOuterProcessOutputWhenStatusFileIsMissing() throws Exception {
         Path runtimeRoot = tempDir.resolve("Nmap/zenmap/bin/BurpPythonIDE");
         TestLauncher launcher =

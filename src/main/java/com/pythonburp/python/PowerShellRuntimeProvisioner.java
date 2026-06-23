@@ -133,7 +133,11 @@ final class PowerShellRuntimeProvisioner implements RuntimeProvisioner {
         if (!Files.exists(statusFile)) {
             return "";
         }
-        return Files.readString(statusFile, StandardCharsets.UTF_8).trim();
+        String status = Files.readString(statusFile, StandardCharsets.UTF_8).trim();
+        if (!status.isEmpty() && status.charAt(0) == '\uFEFF') {
+            status = status.substring(1).trim();
+        }
+        return status;
     }
 
     static Path sharedStatusDirectory() {
