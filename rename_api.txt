@@ -1,0 +1,24 @@
+Mô tả: Đây là request dùng để đặt tên lại cho một request/API
+
+REQUEST:
+PATCH /api/tracking/round/[round_id]/path/[request_id]/ HTTP/1.1
+Host: [examplehost.com]
+Content-Length: 15
+Sec-Ch-Ua-Platform: "Windows"
+Authorization: Bearer [token]
+Accept-Language: en-US,en;q=0.9
+Sec-Ch-Ua: "Not)A;Brand";v="8", "Chromium";v="138"
+Sec-Ch-Ua-Mobile: ?0
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36
+Accept: application/json, text/plain, */*
+Content-Type: application/json
+Origin: https://[examplehost.com]
+Sec-Fetch-Site: same-origin
+Sec-Fetch-Mode: cors
+Sec-Fetch-Dest: empty
+Referer: https://[examplehost.com]/tracking/round/[round_id]
+Accept-Encoding: gzip, deflate, br
+Priority: u=1, i
+Connection: keep-alive
+
+{"name":"[name]"}

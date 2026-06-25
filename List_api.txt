@@ -1,0 +1,36 @@
+Mô tả: Đây là request dùng để lấy đanh sách tất cả các request/API được đẩy lên hệ thống. Mỗi request/API sẽ có một id riêng, và URL tương ứng nằm trong trường url, và tên của request/API sẽ nằm trong trường name.
+
+REQUEST:
+GET /api/tracking/round/[round_id]/path/?page=1&page_size=2000&search= HTTP/1.1
+Host: [examplehost.com]
+Sec-Ch-Ua-Platform: "Windows"
+Authorization: Bearer [token]
+Accept-Language: en-US,en;q=0.9
+Accept: application/json, text/plain, */*
+Sec-Ch-Ua: "Not)A;Brand";v="8", "Chromium";v="138"
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36
+Sec-Ch-Ua-Mobile: ?0
+Sec-Fetch-Site: same-origin
+Sec-Fetch-Mode: cors
+Sec-Fetch-Dest: empty
+Referer: https://[examplehost.com]/tracking/round/[round_id]
+Accept-Encoding: gzip, deflate, br
+Priority: u=1, i
+Connection: keep-alive
+
+RESPONSE:
+HTTP/1.1 200 OK
+Server: nginx/1.24.0 (Ubuntu)
+Date: Tue, 24 Mar 2026 03:11:57 GMT
+Content-Type: application/json
+Content-Length: 250911
+Connection: keep-alive
+Vary: Accept, Origin
+Allow: GET, POST, HEAD, OPTIONS
+X-Frame-Options: DENY
+X-Content-Type-Options: nosniff
+Referrer-Policy: same-origin
+Cross-Origin-Opener-Policy: same-origin
+Content-Security-Policy: default-src 'self' blob: data: localhost localhost:1337 *.googleapis.com *.gstatic.com 'unsafe-eval' 'unsafe-inline'; connect-src *; frame-src *
+
+{"count":1633,"next":"http://host.com","previous":null,"results":[{"id":"69b7b511c5558efe7a1b71d4","es_requests":["69b7b5114134c4076ec380ff","69b7b5124134c4076ec38101"],"es_requests_len":2,"time":"14:44:32 16-03-2026","functions":[{"id":"637c385e5171e3fe9b745200","function_name":"General"}],"rechecks":[],"history":[{"functions":{"old":[],"new":[{"id":"637c385e5171e3fe9b745200","function_name":"General"}]},"updated_at":{"old":null,"new":"2026-03-16 07:45:22"},"updated_by":{"old":null,"new":"admin"}},{"name":{"old":"","new":"global summary"},"updated_at":{"old":"2026-03-16 07:45:22","new":"2026-03-17 03:30:48"},"updated_by":{"old":"admin","new":"khoaha6"}},{"name":{"old":"global summary","new":"global summary 1"},"updated_at":{"old":"2026-03-17 03:30:48","new":"2026-03-23 02:19:42"}},{"name":{"old":"global summary 1","new":""},"updated_at":{"old":"2026-03-23 02:19:42","new":"2026-03-23 04:15:51"}},{"owner":{"old":"","new":"khoaha6"},"status":{"old":"Todo","new":"Done"},"checked_at":{"old":null,"new":"2026-03-23 07:59:20"},"checked_by":{"old":null,"new":"khoaha6"},"updated_at":{"old":"2026-03-23 04:15:51","new":"2026-03-23 07:59:20"}},{"updated_at":{"old":"2026-03-23 07:59:20","new":"2026-03-23 07:59:32"}}],"crawl_started_at":null,"checked_at":"23-03-2026","reviewed_at":null,"main_path_id":null,"name":"","name_jp":null,"hash":"b6facb825cb373d2da4ab92286da0968","request_log_id":"69b7b5114134c4076ec380ff","url":"https://host.com/abc/def","method":"GET","status_code":"200","round":"45","round_order":1.0,"round_order_fraction":"1/1","owner":"khoaha6","user":"khoaha6","flow_id":"000000000000000000000000","flow_order":0,"target":"○","created_type":"RAW","status":"Done","note":"","vulnerable":null,"has_passive_scan_result":null,"crawl_started_by":null,"checked_by":"khoaha6","reviewed_by":null,"updated_at":"2026-03-23T14:59:32.499000+07:00","updated_by":"khoaha6"},{"id":"69b7b5ebc5558efe7a1b79b5","es_requests":["69b7b5eb4134c4076ec38103","69b7b6bd4134c4076ec3817b","69b7cf774134c4076ec383c7","69b901a34134c4076ec38613","69b901ad4134c4076ec38615","69b901ad4134c4076ec38617","69b901ad4134c4076ec38619","69b901ad4134c4076ec3861b","69b901ad4134c4076ec3861d","69b901ad4134c4076ec3861f","69b901ad4134c4076ec38621","69b901ad4134c4076ec38623","69b901b74134c4076ec38627","69b901b74134c4076ec38629","69b901b74134c4076ec3862b","69b901b74134c4076ec3862d","69b901b74134c4076ec3862f","69b901b74134c4076ec38631","69b901c14134c4076ec38633","69b901c14134c4076ec38635","69b901cb4134c4076ec38637","69b901cb4134c4076ec38639","69b901cb4134c4076ec3863b","69b901d54134c4076ec3863f","69b901d54134c4076ec38641","69b901df4134c4076ec38645","69b901df4134c4076ec38647","69b901df4134c4076ec38649","69b901df4134c4076ec3864b","69b901df4134c4076ec3864d","69b901df4134c4076ec3864f","69b902254134c4076ec38665","69b9022f4134c4076ec38669","69b9022f4134c4076ec3866b","69b902394134c4076ec3866d","69b902434134c4076ec3866f","69b9024d4134c4076ec38671","69b9024d4134c4076ec38673","69b902574134c4076ec38675","69b904684134c4076ec386c9"],"es_requests_len":40,"time":"14:48:52 16-03-2026","functions":[{"id":"65e97a8e8ec6358cf0552c05","function_name":"General"}],"rechecks":[],"history":[{"functions":{"old":[],"new":[{"id":"637c385e5171e3fe9b745200","function_name":"General"}]},"updated_at":{"old":null,"new":"2026-03-16 07:48:59"},"updated_by":{"old":null,"new":"admin"}},{"name":{"old":"","new":"FR Global Business Performance > FR Group UQ > Store > Store Anormal Sum/Dist > select JP region > choose store 430: Ameku-... > Click Weekly Report > \"ALL DEPT\" - click \"Business Performence Progress\" > click on any rows"},"updated_at":{"old":"2026-03-16 07:48:59","new":"2026-03-17 03:06:39"},"updated_by":{"old":"admin","new":"baopq18"}},{"functions":{"old":[{"id":"637c385e5171e3fe9b745200","function_name":"General"}],"new":[]},"updated_at":{"old":"2026-03-17 03:06:39","new":"2026-03-17 07:27:57"}},{"functions":{"old":[],"new":[{"id":"65e97a8e8ec6358cf0552c05","function_name":"General"}]},"updated_at":{"old":"2026-03-17 07:27:57","new":"2026-03-17 07:27:59"}},{"owner":{"old":"","new":"baopq18"},"status":{"old":"Todo","new":"Done"},"checked_at":{"old":null,"new":"2026-03-17 07:28:02"},"checked_by":{"old":null,"new":"baopq18"},"updated_at":{"old":"2026-03-17 07:27:59","new":"2026-03-17 07:28:02"}}],"crawl_started_at":null,"checked_at":"17-03-2026","reviewed_at":null,"main_path_id":null,"name":"FR Global Business Performance > FR Group UQ > Store > Store Anormal Sum/Dist > select JP region > choose store 430: Ameku-... > Click Weekly Report > \"ALL DEPT\" - click \"Business Performence Progress\" > click on any rows","name_jp":null,"hash":"7d666e02c667ae91ee98d8f186c72c1c","request_log_id":"69b7b5eb4134c4076ec38103","url":"https://host.com/ass/dsss","method":"GET","status_code":"200","round":"45","round_order":2.0,"round_order_fraction":"2/1","owner":"baopq18","user":"baopq18","flow_id":"000000000000000000000000","flow_order":0,"target":"○","created_type":"RAW","status":"Done","note":"","vulnerable":null,"has_passive_scan_result":null,"crawl_started_by":null,"checked_by":"baopq18","reviewed_by":null,"updated_at":"2026-03-17T14:28:02.153000+07:00","updated_by":"baopq18"},

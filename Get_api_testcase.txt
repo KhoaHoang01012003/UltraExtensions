@@ -1,0 +1,24 @@
+Mô tả: Đây là request để lấy thông tin các testcase được add cho một request/api được đẩy lên hệ thống. mỗi testcase trong riêng từng request/API tương ứng với một id và testcase_name. id của các testcase tương ứng với riêng từng request/API sẽ được sử dụng việc đánh Done các testcase 
+
+REQUEST:
+GET /api/tracking/round/[round_id]/path/[request_id]/testcase/ HTTP/1.1
+Host: [examplehost.com]
+Sec-Ch-Ua-Platform: "Windows"
+Authorization: Bearer [token]
+Accept-Language: en-US,en;q=0.9
+Accept: application/json, text/plain, */*
+Sec-Ch-Ua: "Not)A;Brand";v="8", "Chromium";v="138"
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36
+Sec-Ch-Ua-Mobile: ?0
+Sec-Fetch-Site: same-origin
+Sec-Fetch-Mode: cors
+Sec-Fetch-Dest: empty
+Referer: https://[examplehost.com]/tracking/round/[round_id]
+Accept-Encoding: gzip, deflate, br
+Priority: u=1, i
+Connection: keep-alive
+
+RESPONSE:
+HTTP/1.1 200 OK
+
+[{"id":"69c2072e0086ab8797d6b7e8","testcase_history":[],"testcase_created_at":"2026-03-24T10:38:22.100000+07:00","testcase_created_by":"khoaha6","testcase_updated_at":"2026-03-24T10:38:22.100000+07:00","testcase_updated_by":"khoaha6","testcase_vuln_links":[],"scanner_task":null,"path_id":"69bb65e4c5558efe7a38a06f","round_id":"45","template_id":null,"mission_action_id":null,"mission_template_id":null,"testcase_name":"Scan Tool","testcase_description":"- For MBSD: Scan with Terascan.\n- For Deli/SSA: Scan with Acunetix/Burp Suite Active Scan","testcase_status":"Todo","testcase_output":"","testcase_result":"","testcase_vulns":"","testcase_scannable":null,"testcase_mbsd_vuln_template_id":null,"testcase_nightwolf_vuln_template_id":null},{"id":"69c20d6b0086ab8797d6b7fb","testcase_history":[],"testcase_created_at":"2026-03-24T11:04:59.839000+07:00","testcase_created_by":"khoaha6","testcase_updated_at":"2026-03-24T11:04:59.839000+07:00","testcase_updated_by":"khoaha6","testcase_vuln_links":[],"scanner_task":null,"path_id":"69bb65e4c5558efe7a38a06f","round_id":"45","template_id":null,"mission_action_id":null,"mission_template_id":null,"testcase_name":"Check Forceful Browsing (Authentication)","testcase_description":"Try to perform an unauthenticate operation.","testcase_status":"Todo","testcase_output":"","testcase_result":"","testcase_vulns":"","testcase_scannable":null,"testcase_mbsd_vuln_template_id":null,"testcase_nightwolf_vuln_template_id":null}]
