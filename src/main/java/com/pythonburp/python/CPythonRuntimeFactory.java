@@ -140,6 +140,10 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
         return pipProbeWarning;
     }
 
+    public Path stdlibFallbackRoot() {
+        return stdlibFallbackRoot;
+    }
+
     private Path prepareHelperRoot() throws IOException {
         return new ResourceDirectoryStager(
             paths.runtimeAssetsRoot(environment.environmentKey()),
@@ -168,7 +172,9 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
         try {
             Path executable = runtimePaths.pythonExecutable();
             ProbeResult metadata = run(executable, "-c",
-                "import os, platform, sys; stdlib = os.path.dirname(getattr(os, '__file__', '') or ''); print('|'.join([str(sys.version_info[0]), str(sys.version_info[1]), str(sys.version_info[2]), platform.system(), platform.machine(), sys.executable, stdlib]))");
+                "import os, platform, sys; stdlib = os.path.dirname(getattr(os, '__file__', '') or ''); "
+                    + "stdlib = os.path.normpath(os.path.join(os.path.dirname(sys.executable), stdlib)) if stdlib and not os.path.isabs(stdlib) else (os.path.abspath(stdlib) if stdlib else ''); "
+                    + "print('|'.join([str(sys.version_info[0]), str(sys.version_info[1]), str(sys.version_info[2]), platform.system(), platform.machine(), sys.executable, stdlib]))");
             if (!metadata.succeeded()) {
                 throw new IOException("Python metadata probe failed: " + metadata.describeFailure());
             }

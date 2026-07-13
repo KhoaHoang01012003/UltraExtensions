@@ -80,6 +80,9 @@ public final class BurpPythonIdeExtension {
             "Using Zenmap Python " + runtimeFactory.environment().version() + " at "
                 + runtimeFactory.pythonExecutable()
         );
+        if (runtimeFactory.stdlibFallbackRoot() != null) {
+            api.logging().logToOutput("Resolved Zenmap stdlib root at " + runtimeFactory.stdlibFallbackRoot());
+        }
         if (runtimeFactory.usingBundledPipFallback()) {
             api.logging().logToOutput("Using bundled pip compatibility layer from " + paths.root());
             if (runtimeFactory.pipProbeWarning() != null && !runtimeFactory.pipProbeWarning().isBlank()) {
