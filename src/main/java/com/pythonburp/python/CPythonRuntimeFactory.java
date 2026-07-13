@@ -163,15 +163,17 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
         try {
             Path executable = runtimePaths.pythonExecutable();
             ProbeResult metadata = run(executable, "-c",
-                "import platform, sys; print('|'.join([str(sys.version_info[0]), str(sys.version_info[1]), str(sys.version_info[2]), platform.system(), platform.machine(), sys.executable]))");
+                "import os, platform, sys, sysconfig; stdlib = sysconfig.get_path('stdlib') or os.path.dirname(os.__file__); print('|'.join([str(sys.version_info[0]), str(sys.version_info[1]), str(sys.version_info[2]), platform.system(), platform.machine(), sys.executable, stdlib]))");
             if (!metadata.succeeded()) {
                 throw new IOException("Python metadata probe failed: " + metadata.describeFailure());
             }
 
-            String[] parts = metadata.stdout().strip().split("\\|", 6);
-            if (parts.length < 6) {
+            String[] parts = metadata.stdout().strip().split("\\|", 7);
+            if (parts.length < 7) {
                 throw new IOException("Unexpected Python metadata output: " + metadata.stdout().strip());
             }
+
+            Path stdlibRoot = parts[6] == null || parts[6].isBlank() ? null : Path.of(parts[6]).toAbsolutePath().normalize();
 
             PythonRuntimeEnvironment environment = new PythonRuntimeEnvironment(
                 Path.of(parts[5]),
@@ -199,12 +201,12 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
                     ),
                     true,
                     null,
-                    runtimePaths.libDirectory(),
+                    stdlibRoot,
                     null
                 );
             }
 
-            Path stdlibFallbackRoot = runtimePaths.libDirectory();
+            Path stdlibFallbackRoot = stdlibRoot;
             Path pipBootstrapRoot = stageBundledPipRoot(paths, environment.environmentKey(), stdlibFallbackRoot);
             ProbeResult bundledPip = run(executable, Map.of(
                 "PYTHONPATH", pipBootstrapRoot.toString(),
