@@ -81,6 +81,7 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
     private final BurpBridge bridge;
     private final Path userPackages;
     private final Path helperRoot;
+    private final List<Path> extraPythonPaths;
     private final InteractiveInputHandler inputHandler;
 
     public CPythonWorkerRuntime(CPythonWorkerCommand command, Path workingDirectory) {
@@ -100,11 +101,21 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
 
     public CPythonWorkerRuntime(CPythonWorkerCommand command, Path workingDirectory, BurpBridge bridge,
                                 Path userPackages, Path helperRoot, InteractiveInputHandler inputHandler) {
+        this(command, workingDirectory, bridge, userPackages, helperRoot, List.of(), inputHandler);
+    }
+
+    public CPythonWorkerRuntime(CPythonWorkerCommand command, Path workingDirectory, BurpBridge bridge,
+                                Path userPackages, Path helperRoot, List<Path> extraPythonPaths,
+                                InteractiveInputHandler inputHandler) {
         this.command = Objects.requireNonNull(command, "command");
         this.workingDirectory = Objects.requireNonNull(workingDirectory, "workingDirectory").toAbsolutePath().normalize();
         this.bridge = Objects.requireNonNull(bridge, "bridge");
         this.userPackages = Objects.requireNonNull(userPackages, "userPackages").toAbsolutePath().normalize();
         this.helperRoot = Objects.requireNonNull(helperRoot, "helperRoot").toAbsolutePath().normalize();
+        this.extraPythonPaths = extraPythonPaths == null ? List.of() : extraPythonPaths.stream()
+            .filter(Objects::nonNull)
+            .map(path -> path.toAbsolutePath().normalize())
+            .toList();
         this.inputHandler = Objects.requireNonNull(inputHandler, "inputHandler");
     }
 
@@ -131,7 +142,7 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
             builder.environment().put("BURP_PYTHON_USER_PACKAGES", userPackages.toString());
             builder.environment().put("BURP_PYTHON_HELPER_ROOT", helperRoot.toString());
             String existingPythonPath = builder.environment().getOrDefault("PYTHONPATH", "");
-            String computedPythonPath = userPackages + File.pathSeparator + helperRoot;
+            String computedPythonPath = pythonPathPrefix();
             builder.environment().put("PYTHONPATH", existingPythonPath.isBlank()
                 ? computedPythonPath
                 : computedPythonPath + File.pathSeparator + existingPythonPath);
@@ -206,6 +217,17 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
 
     private void writeSiteCustomize() throws IOException {
         Files.writeString(helperRoot.resolve("sitecustomize.py"), SITE_CUSTOMIZE, StandardCharsets.UTF_8);
+    }
+
+    private String pythonPathPrefix() {
+        StringBuilder value = new StringBuilder()
+            .append(userPackages)
+            .append(File.pathSeparator)
+            .append(helperRoot);
+        for (Path path : extraPythonPaths) {
+            value.append(File.pathSeparator).append(path);
+        }
+        return value.toString();
     }
 
     @Override

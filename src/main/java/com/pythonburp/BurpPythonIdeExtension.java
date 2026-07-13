@@ -59,8 +59,8 @@ public final class BurpPythonIdeExtension {
             paths, coordinator, new SharedPackageEnvironment(paths, runtimeFactory.userPackages()),
             new PackageRequestStore(paths.packageRequests()),
             new PackageSettingsStore(paths.settings().resolve("pip.properties")),
-            new PackageInventoryReader(catalog), cleaner, new EmbeddedPipRunner(),
-            runtimeFactory.userPackages(), catalog, true, runtimeFactory.environment().pipAvailable(), runtimeFactory::pythonExecutable
+            new PackageInventoryReader(catalog), cleaner, new EmbeddedPipRunner(runtimeFactory::pipEnvironmentOverrides),
+            runtimeFactory.userPackages(), catalog, true, runtimeFactory.pipAvailable(), runtimeFactory::pythonExecutable
         );
         Edt.runAndWait(() -> {
             BurpPythonIdeTab tab = new BurpPythonIdeTab(initializedContext.executors(), bridge, paths,
@@ -80,7 +80,9 @@ public final class BurpPythonIdeExtension {
             "Using Zenmap Python " + runtimeFactory.environment().version() + " at "
                 + runtimeFactory.pythonExecutable()
         );
-        if (!runtimeFactory.environment().pipAvailable()) {
+        if (runtimeFactory.usingBundledPipFallback()) {
+            api.logging().logToOutput("Using bundled pip compatibility layer from " + paths.root());
+        } else if (!runtimeFactory.pipAvailable()) {
             api.logging().logToError(packageService.pipUnavailableMessage());
         }
         api.logging().logToOutput(VersionInfo.EXTENSION_NAME + " " + VersionInfo.EXTENSION_VERSION + " loaded");

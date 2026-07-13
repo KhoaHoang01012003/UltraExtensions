@@ -75,6 +75,28 @@ final class CPythonWorkerRuntimeTest {
     }
 
     @Test
+    void prependsExtraPythonPathsToWorkerEnvironment() throws Exception {
+        Path extraPath = Files.createDirectories(tempDir.resolve("pip-bootstrap"));
+        Path fake = tempDir.resolve("env-pythonpath.ps1");
+        Files.writeString(fake, "Write-Output $env:PYTHONPATH\nexit 0\n");
+        CPythonWorkerRuntime runtime = new CPythonWorkerRuntime(
+            new CPythonWorkerCommand(List.of(
+                "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", fake.toString()
+            )),
+            tempDir.resolve("env-work"),
+            new com.pythonburp.bridge.BurpBridge(),
+            tempDir.resolve("user-packages"),
+            tempDir.resolve("helper-root"),
+            List.of(extraPath),
+            InteractiveInputHandler.disabled()
+        );
+
+        ScriptRunResult result = runtime.execute("print('ignored')", Duration.ofSeconds(5));
+
+        assertTrue(result.stdout().contains(extraPath.toAbsolutePath().normalize().toString()));
+    }
+
+    @Test
     void customCommandModePassesRawArgumentsAfterPythonExecutable() throws Exception {
         Path fake = tempDir.resolve("custom-command.ps1");
         Files.writeString(fake, """

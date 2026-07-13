@@ -7,16 +7,22 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
 
 public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     public static final String HELPER_RESOURCE_ROOT = "/cpython/windows-x64/Lib/site-packages/burp";
     public static final String HELPER_STAGE_ID = "python-worker-burp-rpc2";
+    public static final String PIP_RESOURCE_ROOT = "/cpython/windows-x64/Lib/site-packages/pip";
+    public static final String PIP_STAGE_ID = "python-worker-pip-bootstrap1";
 
     private final NmapRuntimePaths runtimePaths;
     private final ExtensionDataPaths paths;
     private final PythonRuntimeEnvironment environment;
+    private final boolean pipAvailable;
+    private final Path pipBootstrapRoot;
     private final Supplier<Path> helperRootSupplier;
 
     public CPythonRuntimeFactory() {
@@ -32,27 +38,28 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     }
 
     CPythonRuntimeFactory(NmapRuntimePaths runtimePaths, ExtensionDataPaths paths) {
-        this(
+        this(probeRuntime(
             Objects.requireNonNull(runtimePaths, "runtimePaths"),
-            Objects.requireNonNull(paths, "paths"),
-            probeEnvironment(runtimePaths),
-            null
-        );
+            Objects.requireNonNull(paths, "paths")
+        ));
     }
 
     public CPythonRuntimeFactory(PythonRuntimeEnvironment environment, ExtensionDataPaths paths) {
-        this(NmapRuntimePaths.fixed(), paths, environment, null);
+        this(NmapRuntimePaths.fixed(), paths, environment, environment.pipAvailable(), null, null);
     }
 
     public CPythonRuntimeFactory(PythonRuntimeEnvironment environment, ExtensionDataPaths paths, Supplier<Path> helperRootSupplier) {
-        this(NmapRuntimePaths.fixed(), paths, environment, helperRootSupplier);
+        this(NmapRuntimePaths.fixed(), paths, environment, environment.pipAvailable(), null, helperRootSupplier);
     }
 
     private CPythonRuntimeFactory(NmapRuntimePaths runtimePaths, ExtensionDataPaths paths,
-                                  PythonRuntimeEnvironment environment, Supplier<Path> helperRootSupplier) {
+                                  PythonRuntimeEnvironment environment, boolean pipAvailable, Path pipBootstrapRoot,
+                                  Supplier<Path> helperRootSupplier) {
         this.runtimePaths = Objects.requireNonNull(runtimePaths, "runtimePaths");
         this.paths = Objects.requireNonNull(paths, "paths");
         this.environment = Objects.requireNonNull(environment, "environment");
+        this.pipAvailable = pipAvailable;
+        this.pipBootstrapRoot = pipBootstrapRoot == null ? null : pipBootstrapRoot.toAbsolutePath().normalize();
         validateEnvironment(environment);
         this.helperRootSupplier = helperRootSupplier == null ? () -> {
             try {
@@ -79,6 +86,7 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
             bridge,
             userPackages(),
             helperRootSupplier.get(),
+            extraPythonPaths(),
             inputHandler
         );
     }
@@ -91,6 +99,21 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
         return environment;
     }
 
+    public boolean pipAvailable() {
+        return pipAvailable;
+    }
+
+    public boolean usingBundledPipFallback() {
+        return pipAvailable && !environment.pipAvailable() && pipBootstrapRoot != null;
+    }
+
+    public Map<String, String> pipEnvironmentOverrides() {
+        if (pipBootstrapRoot == null) {
+            return Map.of();
+        }
+        return Map.of("PYTHONPATH", pipBootstrapRoot.toString());
+    }
+
     private Path prepareHelperRoot() throws IOException {
         return new ResourceDirectoryStager(
             paths.runtimeAssetsRoot(environment.environmentKey()),
@@ -101,11 +124,15 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
         ).stage();
     }
 
+    private List<Path> extraPythonPaths() {
+        return pipBootstrapRoot == null ? List.of() : List.of(pipBootstrapRoot);
+    }
+
     public Path pythonExecutable() {
         return environment.executable();
     }
 
-    private static PythonRuntimeEnvironment probeEnvironment(NmapRuntimePaths runtimePaths) {
+    private static ProbedRuntime probeRuntime(NmapRuntimePaths runtimePaths, ExtensionDataPaths paths) {
         try {
             Path executable = runtimePaths.pythonExecutable();
             ProbeResult metadata = run(executable, "-c",
@@ -119,16 +146,6 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
                 throw new IOException("Unexpected Python metadata output: " + metadata.stdout().strip());
             }
 
-            ProbeResult pip = run(executable, "-m", "pip", "--version");
-            boolean pipAvailable = pip.succeeded();
-            if (!pipAvailable) {
-                ProbeResult ensurePip = run(executable, "-m", "ensurepip", "--upgrade");
-                if (ensurePip.succeeded()) {
-                    pip = run(executable, "-m", "pip", "--version");
-                    pipAvailable = pip.succeeded();
-                }
-            }
-
             PythonRuntimeEnvironment environment = new PythonRuntimeEnvironment(
                 Path.of(parts[5]),
                 Integer.parseInt(parts[0]),
@@ -136,12 +153,45 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
                 Integer.parseInt(parts[2]),
                 parts[3],
                 parts[4],
-                pipAvailable
+                false
             );
-            return environment;
+
+            ProbeResult nativePip = run(executable, "-m", "pip", "--version");
+            if (nativePip.succeeded()) {
+                return new ProbedRuntime(
+                    runtimePaths,
+                    paths,
+                    new PythonRuntimeEnvironment(
+                        environment.executable(),
+                        environment.major(),
+                        environment.minor(),
+                        environment.micro(),
+                        environment.platform(),
+                        environment.architecture(),
+                        true
+                    ),
+                    true,
+                    null
+                );
+            }
+
+            Path pipBootstrapRoot = stageBundledPipRoot(paths, environment.environmentKey());
+            ProbeResult bundledPip = run(executable, Map.of("PYTHONPATH", pipBootstrapRoot.toString()), "-m", "pip", "--version");
+            boolean pipAvailable = bundledPip.succeeded();
+            return new ProbedRuntime(runtimePaths, paths, environment, pipAvailable, pipAvailable ? pipBootstrapRoot : null);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to probe Zenmap Python at " + runtimePaths.zenmapBin() + ": " + e.getMessage(), e);
         }
+    }
+
+    private static Path stageBundledPipRoot(ExtensionDataPaths paths, String environmentKey) throws IOException {
+        return new ResourceDirectoryStager(
+            paths.runtimeAssetsRoot(environmentKey + "-bundled-pip"),
+            CPythonRuntimeFactory.class,
+            PIP_RESOURCE_ROOT,
+            "pip",
+            PIP_STAGE_ID
+        ).stage();
     }
 
     private static void validateEnvironment(PythonRuntimeEnvironment environment) {
@@ -153,9 +203,14 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     }
 
     private static ProbeResult run(Path executable, String... arguments) throws IOException {
+        return run(executable, Map.of(), arguments);
+    }
+
+    private static ProbeResult run(Path executable, Map<String, String> environmentOverrides, String... arguments) throws IOException {
         ProcessBuilder builder = new ProcessBuilder();
         builder.command().add(executable.toString());
         builder.command().addAll(java.util.List.of(arguments));
+        applyEnvironment(builder.environment(), environmentOverrides);
         Process process = builder.start();
 
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
@@ -173,6 +228,27 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Interrupted while probing Zenmap Python.", e);
+        }
+    }
+
+    private static void applyEnvironment(Map<String, String> target, Map<String, String> overrides) {
+        if (overrides == null || overrides.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, String> entry : overrides.entrySet()) {
+            String key = entry.getKey();
+            String value = entry.getValue();
+            if (key == null || key.isBlank() || value == null || value.isBlank()) {
+                continue;
+            }
+            if ("PYTHONPATH".equalsIgnoreCase(key)) {
+                String existing = target.getOrDefault(key, "");
+                target.put(key, existing == null || existing.isBlank()
+                    ? value
+                    : value + java.io.File.pathSeparator + existing);
+                continue;
+            }
+            target.put(key, value);
         }
     }
 
@@ -201,5 +277,26 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
             String details = stderr == null || stderr.isBlank() ? stdout : stderr;
             return "exit code " + exitCode + (details == null || details.isBlank() ? "" : ": " + details.strip());
         }
+    }
+
+    private record ProbedRuntime(NmapRuntimePaths runtimePaths, ExtensionDataPaths paths,
+                                 PythonRuntimeEnvironment environment, boolean pipAvailable,
+                                 Path pipBootstrapRoot) {
+        private ProbedRuntime {
+            Objects.requireNonNull(runtimePaths, "runtimePaths");
+            Objects.requireNonNull(paths, "paths");
+            Objects.requireNonNull(environment, "environment");
+        }
+    }
+
+    private CPythonRuntimeFactory(ProbedRuntime probedRuntime) {
+        this(
+            probedRuntime.runtimePaths(),
+            probedRuntime.paths(),
+            probedRuntime.environment(),
+            probedRuntime.pipAvailable(),
+            probedRuntime.pipBootstrapRoot(),
+            null
+        );
     }
 }

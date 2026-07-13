@@ -145,8 +145,8 @@ public final class BurpPythonIdeTab extends JPanel {
             paths, coordinator, new SharedPackageEnvironment(paths, runtimeFactory.userPackages()),
             new PackageRequestStore(paths.packageRequests()),
             new PackageSettingsStore(paths.settings().resolve("pip.properties")),
-            new PackageInventoryReader(catalog), cleaner, new EmbeddedPipRunner(),
-            runtimeFactory.userPackages(), catalog, true, runtimeFactory.environment().pipAvailable(), runtimeFactory::pythonExecutable
+            new PackageInventoryReader(catalog), cleaner, new EmbeddedPipRunner(runtimeFactory::pipEnvironmentOverrides),
+            runtimeFactory.userPackages(), catalog, true, runtimeFactory.pipAvailable(), runtimeFactory::pythonExecutable
         );
         return new Defaults(paths, coordinator, runtimeFactory, service);
     }
