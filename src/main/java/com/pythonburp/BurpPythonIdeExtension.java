@@ -82,6 +82,9 @@ public final class BurpPythonIdeExtension {
         );
         if (runtimeFactory.usingBundledPipFallback()) {
             api.logging().logToOutput("Using bundled pip compatibility layer from " + paths.root());
+            if (runtimeFactory.pipProbeWarning() != null && !runtimeFactory.pipProbeWarning().isBlank()) {
+                api.logging().logToOutput(runtimeFactory.pipProbeWarning());
+            }
         } else if (!runtimeFactory.pipAvailable()) {
             api.logging().logToError(packageService.pipUnavailableMessage());
         }

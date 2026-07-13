@@ -23,6 +23,7 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     private final PythonRuntimeEnvironment environment;
     private final boolean pipAvailable;
     private final Path pipBootstrapRoot;
+    private final String pipProbeWarning;
     private final Supplier<Path> helperRootSupplier;
 
     public CPythonRuntimeFactory() {
@@ -45,21 +46,22 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     }
 
     public CPythonRuntimeFactory(PythonRuntimeEnvironment environment, ExtensionDataPaths paths) {
-        this(NmapRuntimePaths.fixed(), paths, environment, environment.pipAvailable(), null, null);
+        this(NmapRuntimePaths.fixed(), paths, environment, environment.pipAvailable(), null, null, null);
     }
 
     public CPythonRuntimeFactory(PythonRuntimeEnvironment environment, ExtensionDataPaths paths, Supplier<Path> helperRootSupplier) {
-        this(NmapRuntimePaths.fixed(), paths, environment, environment.pipAvailable(), null, helperRootSupplier);
+        this(NmapRuntimePaths.fixed(), paths, environment, environment.pipAvailable(), null, null, helperRootSupplier);
     }
 
     private CPythonRuntimeFactory(NmapRuntimePaths runtimePaths, ExtensionDataPaths paths,
                                   PythonRuntimeEnvironment environment, boolean pipAvailable, Path pipBootstrapRoot,
-                                  Supplier<Path> helperRootSupplier) {
+                                  String pipProbeWarning, Supplier<Path> helperRootSupplier) {
         this.runtimePaths = Objects.requireNonNull(runtimePaths, "runtimePaths");
         this.paths = Objects.requireNonNull(paths, "paths");
         this.environment = Objects.requireNonNull(environment, "environment");
         this.pipAvailable = pipAvailable;
         this.pipBootstrapRoot = pipBootstrapRoot == null ? null : pipBootstrapRoot.toAbsolutePath().normalize();
+        this.pipProbeWarning = pipProbeWarning;
         validateEnvironment(environment);
         this.helperRootSupplier = helperRootSupplier == null ? () -> {
             try {
@@ -112,6 +114,10 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
             return Map.of();
         }
         return Map.of("PYTHONPATH", pipBootstrapRoot.toString());
+    }
+
+    public String pipProbeWarning() {
+        return pipProbeWarning;
     }
 
     private Path prepareHelperRoot() throws IOException {
@@ -171,14 +177,17 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
                         true
                     ),
                     true,
+                    null,
                     null
                 );
             }
 
             Path pipBootstrapRoot = stageBundledPipRoot(paths, environment.environmentKey());
             ProbeResult bundledPip = run(executable, Map.of("PYTHONPATH", pipBootstrapRoot.toString()), "-m", "pip", "--version");
-            boolean pipAvailable = bundledPip.succeeded();
-            return new ProbedRuntime(runtimePaths, paths, environment, pipAvailable, pipAvailable ? pipBootstrapRoot : null);
+            String pipProbeWarning = bundledPip.succeeded()
+                ? null
+                : "Bundled pip startup probe failed: " + bundledPip.describeFailure();
+            return new ProbedRuntime(runtimePaths, paths, environment, true, pipBootstrapRoot, pipProbeWarning);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to probe Zenmap Python at " + runtimePaths.zenmapBin() + ": " + e.getMessage(), e);
         }
@@ -281,7 +290,7 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
 
     private record ProbedRuntime(NmapRuntimePaths runtimePaths, ExtensionDataPaths paths,
                                  PythonRuntimeEnvironment environment, boolean pipAvailable,
-                                 Path pipBootstrapRoot) {
+                                 Path pipBootstrapRoot, String pipProbeWarning) {
         private ProbedRuntime {
             Objects.requireNonNull(runtimePaths, "runtimePaths");
             Objects.requireNonNull(paths, "paths");
@@ -296,6 +305,7 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
             probedRuntime.environment(),
             probedRuntime.pipAvailable(),
             probedRuntime.pipBootstrapRoot(),
+            probedRuntime.pipProbeWarning(),
             null
         );
     }
