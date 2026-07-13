@@ -37,6 +37,20 @@ final class NmapRuntimePaths {
     return python;
   }
 
+  Path libDirectory() throws IOException {
+    if (!Files.isDirectory(zenmapBin)) {
+      throw new IOException("Expected Zenmap bin directory at " + zenmapBin + ".");
+    }
+    Path lib = zenmapBin.resolve("Lib").normalize();
+    if (!lib.startsWith(zenmapBin)) {
+      throw new IOException("Refusing Lib directory path outside Zenmap bin: " + lib);
+    }
+    if (!Files.isDirectory(lib)) {
+      throw new IOException("Zenmap Python Lib directory was not found at " + lib + ".");
+    }
+    return lib;
+  }
+
   Path workerCacheRoot() throws IOException {
     if (!Files.exists(zenmapBin)) {
       if (!endsWithZenmapBin()) {

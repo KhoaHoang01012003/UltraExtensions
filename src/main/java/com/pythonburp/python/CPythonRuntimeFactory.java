@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.io.File;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -19,15 +20,13 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     public static final String HELPER_STAGE_ID = "python-worker-burp-rpc2";
     public static final String PIP_RESOURCE_ROOT = "/cpython/windows-x64/Lib/site-packages/pip";
     public static final String PIP_STAGE_ID = "python-worker-pip-bootstrap1";
-    public static final String STDLIB_SOURCE_RESOURCE_ROOT = "/cpython/windows-x64/stdlib-source";
-    public static final String STDLIB_STAGE_ID = "python-worker-stdlib-source2";
     private static final String PIP_BOOTSTRAP_SITE_CUSTOMIZE = """
         import os
         import sys
 
         fallback_stdlib = os.environ.get("BURP_PYTHON_FALLBACK_STDLIB_ROOT", "")
         if fallback_stdlib and os.path.isdir(fallback_stdlib) and fallback_stdlib not in sys.path:
-            sys.path.append(fallback_stdlib)
+            sys.path.insert(0, fallback_stdlib)
         """;
 
     private final NmapRuntimePaths runtimePaths;
@@ -200,12 +199,12 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
                     ),
                     true,
                     null,
-                    null,
+                    runtimePaths.libDirectory(),
                     null
                 );
             }
 
-            Path stdlibFallbackRoot = stageBundledStdlibRoot(paths, environment.environmentKey());
+            Path stdlibFallbackRoot = runtimePaths.libDirectory();
             Path pipBootstrapRoot = stageBundledPipRoot(paths, environment.environmentKey(), stdlibFallbackRoot);
             ProbeResult bundledPip = run(executable, Map.of(
                 "PYTHONPATH", pipBootstrapRoot.toString(),
@@ -233,16 +232,6 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
             Files.writeString(root.resolve(".stdlib-root-path"), stdlibFallbackRoot.toString(), StandardCharsets.UTF_8);
         }
         return root;
-    }
-
-    private static Path stageBundledStdlibRoot(ExtensionDataPaths paths, String environmentKey) throws IOException {
-        return new ResourceDirectoryStager(
-            paths.runtimeAssetsRoot(environmentKey + "-bundled-stdlib"),
-            CPythonRuntimeFactory.class,
-            STDLIB_SOURCE_RESOURCE_ROOT,
-            "stdlib",
-            STDLIB_STAGE_ID
-        ).stage().resolve("stdlib");
     }
 
     private static void validateEnvironment(PythonRuntimeEnvironment environment) {

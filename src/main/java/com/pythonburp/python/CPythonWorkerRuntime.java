@@ -58,7 +58,7 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
 
         fallback_stdlib = os.environ.get("BURP_PYTHON_FALLBACK_STDLIB_ROOT", "")
         if fallback_stdlib and os.path.isdir(fallback_stdlib) and fallback_stdlib not in sys.path:
-            sys.path.append(fallback_stdlib)
+            sys.path.insert(0, fallback_stdlib)
 
         class _BurpStdin:
             encoding = "utf-8"
