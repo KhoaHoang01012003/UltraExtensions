@@ -95,6 +95,18 @@ final class BurpPythonIdeExtensionTest {
         assertTrue(stub.errorLogs.stream().anyMatch(message -> message.contains("zenmap python missing")));
     }
 
+    @Test
+    void initializeStillLoadsWhenPipIsUnavailable() throws Exception {
+        BurpPythonIdeExtension extension = readyExtension(false);
+        StubMontoyaApi stub = new StubMontoyaApi();
+
+        extension.initialize(stub.api());
+
+        assertEquals(1, stub.suiteTabRegistrations);
+        assertTrue(stub.errorLogs.stream().anyMatch(message ->
+            message.contains("does not provide pip") || message.contains("package install/repair commands are unavailable")));
+    }
+
     private static ExtensionContext contextFrom(BurpPythonIdeExtension extension) throws Exception {
         java.lang.reflect.Field field = BurpPythonIdeExtension.class.getDeclaredField("context");
         field.setAccessible(true);
@@ -102,10 +114,14 @@ final class BurpPythonIdeExtensionTest {
     }
 
     private BurpPythonIdeExtension readyExtension() throws Exception {
+        return readyExtension(true);
+    }
+
+    private BurpPythonIdeExtension readyExtension(boolean pipAvailable) throws Exception {
         Path fakePython = Files.writeString(tempDir.resolve("python.exe"), "fake");
         Path helperRoot = Files.createDirectories(tempDir.resolve("helper-root"));
         return new BurpPythonIdeExtension(paths -> new CPythonRuntimeFactory(
-            new PythonRuntimeEnvironment(fakePython, 3, 14, 0, "Windows", "AMD64", true),
+            new PythonRuntimeEnvironment(fakePython, 3, 14, 0, "Windows", "AMD64", pipAvailable),
             paths,
             () -> helperRoot
         ));

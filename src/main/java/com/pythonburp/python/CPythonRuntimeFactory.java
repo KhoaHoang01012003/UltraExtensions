@@ -120,8 +120,13 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
             }
 
             ProbeResult pip = run(executable, "-m", "pip", "--version");
-            if (!pip.succeeded()) {
-                throw new IOException("Python pip probe failed: " + pip.describeFailure());
+            boolean pipAvailable = pip.succeeded();
+            if (!pipAvailable) {
+                ProbeResult ensurePip = run(executable, "-m", "ensurepip", "--upgrade");
+                if (ensurePip.succeeded()) {
+                    pip = run(executable, "-m", "pip", "--version");
+                    pipAvailable = pip.succeeded();
+                }
             }
 
             PythonRuntimeEnvironment environment = new PythonRuntimeEnvironment(
@@ -131,7 +136,7 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
                 Integer.parseInt(parts[2]),
                 parts[3],
                 parts[4],
-                true
+                pipAvailable
             );
             return environment;
         } catch (IOException e) {
@@ -143,11 +148,6 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
         if (!environment.isPython3()) {
             throw new IllegalStateException(
                 "Zenmap Python must be Python 3, but detected " + environment.version() + "."
-            );
-        }
-        if (!environment.pipAvailable()) {
-            throw new IllegalStateException(
-                "Zenmap Python at " + environment.executable() + " does not provide pip."
             );
         }
     }

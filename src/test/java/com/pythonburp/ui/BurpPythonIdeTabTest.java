@@ -112,6 +112,7 @@ final class BurpPythonIdeTabTest {
                 runtimeFactory.userPackages(),
                 new PackageCatalog(List.of()),
                 true,
+                true,
                 runtimeFactory::pythonExecutable
             );
             return java.util.Optional.of(new BurpPythonIdeTab(

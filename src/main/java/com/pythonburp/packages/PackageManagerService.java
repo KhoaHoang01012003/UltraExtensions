@@ -22,6 +22,7 @@ public final class PackageManagerService {
     private final Path userPackages;
     private final PackageCatalog catalog;
     private final boolean blockNativeCatalogInstalls;
+    private final boolean pipAvailable;
     private final RuntimeActivityCoordinator coordinator;
     private final SharedPackageEnvironment environment;
     private final PackageRequestStore requestStore;
@@ -44,7 +45,7 @@ public final class PackageManagerService {
         Path python
     ) {
         this(paths, coordinator, environment, requestStore, settingsStore, inventoryReader,
-            cleaner, pipRunner, paths.userPackages(), new PackageCatalog(List.of()), false, () -> python);
+            cleaner, pipRunner, paths.userPackages(), new PackageCatalog(List.of()), false, true, () -> python);
     }
 
     public PackageManagerService(
@@ -59,7 +60,7 @@ public final class PackageManagerService {
         Supplier<Path> pythonSupplier
     ) {
         this(paths, coordinator, environment, requestStore, settingsStore, inventoryReader,
-            cleaner, pipRunner, paths.userPackages(), new PackageCatalog(List.of()), false, pythonSupplier);
+            cleaner, pipRunner, paths.userPackages(), new PackageCatalog(List.of()), false, true, pythonSupplier);
     }
 
     public PackageManagerService(
@@ -74,12 +75,14 @@ public final class PackageManagerService {
         Path userPackages,
         PackageCatalog catalog,
         boolean blockNativeCatalogInstalls,
+        boolean pipAvailable,
         Supplier<Path> pythonSupplier
     ) {
         this.paths = paths;
         this.userPackages = paths.requireOwnedUnchecked(userPackages);
         this.catalog = catalog == null ? new PackageCatalog(List.of()) : catalog;
         this.blockNativeCatalogInstalls = blockNativeCatalogInstalls;
+        this.pipAvailable = pipAvailable;
         this.coordinator = coordinator;
         this.environment = environment;
         this.requestStore = requestStore;
@@ -163,9 +166,16 @@ public final class PackageManagerService {
     public PackageManagerSettings settings() throws IOException { return settingsStore.load(); }
     public void saveSettings(PackageManagerSettings settings) throws IOException { settingsStore.save(settings); }
     public boolean resetRequired() { return reset; }
+    public boolean pipAvailable() { return pipAvailable; }
+    public String pipUnavailableMessage() {
+        return "Zenmap Python does not provide pip on this machine. Script execution still works, but package install/repair commands are unavailable.";
+    }
 
     private PackageOperationResult mutate(List<PackageRequest> next, Consumer<String> output) {
         if (reset) return failure("Extension reload is required after reset");
+        if (!pipAvailable && !next.isEmpty()) {
+            return failure(pipUnavailableMessage());
+        }
         try (var ignored = coordinator.beginPackageMutation()) {
             PackageManagerSettings settings = settingsStore.load();
             validateRequests(next);

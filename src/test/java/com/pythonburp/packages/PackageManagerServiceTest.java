@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class PackageManagerServiceTest {
@@ -31,7 +32,23 @@ final class PackageManagerServiceTest {
         assertTrue(Files.exists(paths.userPackages().resolve("demo_package-1.2.3.dist-info/METADATA")));
     }
 
+    @Test
+    void installFailsCleanlyWhenPipIsUnavailable() throws Exception {
+        ExtensionDataPaths paths = new ExtensionDataPaths(tempDir.resolve("data-no-pip"));
+        PackageManagerService service = service(paths, false);
+
+        PackageOperationResult result = service.installRequirement("demo-package==1.2.3", ignored -> {});
+
+        assertFalse(result.succeeded());
+        assertEquals(service.pipUnavailableMessage(), result.message());
+        assertTrue(new PackageRequestStore(paths.packageRequests()).load().isEmpty());
+    }
+
     private PackageManagerService service(ExtensionDataPaths paths) {
+        return service(paths, true);
+    }
+
+    private PackageManagerService service(ExtensionDataPaths paths, boolean pipAvailable) {
         EmbeddedPipRunner runner = new EmbeddedPipRunner() {
             @Override
             public PipRunResult run(List<String> command, java.util.function.Consumer<String> output) throws IOException {
@@ -51,7 +68,11 @@ final class PackageManagerServiceTest {
             new PackageInventoryReader(new PackageCatalog(List.of())),
             new ExtensionDataCleaner(paths),
             runner,
-            tempDir.resolve("python.exe")
+            paths.userPackages(),
+            new PackageCatalog(List.of()),
+            false,
+            pipAvailable,
+            () -> tempDir.resolve("python.exe")
         );
     }
 }

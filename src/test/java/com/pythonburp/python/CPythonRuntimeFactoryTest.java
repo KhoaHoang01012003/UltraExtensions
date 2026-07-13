@@ -48,6 +48,22 @@ final class CPythonRuntimeFactoryTest {
   }
 
   @Test
+  void acceptsPython3InterpreterEvenWhenPipIsUnavailable() throws Exception {
+    Path fakePython = Files.writeString(tempDir.resolve("python.exe"), "fake");
+    Path helperRoot = Files.createDirectories(tempDir.resolve("helper-root"));
+    ExtensionDataPaths paths = new ExtensionDataPaths(tempDir.resolve("localappdata/BurpPythonIDE"));
+
+    CPythonRuntimeFactory factory = new CPythonRuntimeFactory(
+        new PythonRuntimeEnvironment(fakePython, 3, 14, 0, "Windows", "AMD64", false),
+        paths,
+        () -> helperRoot
+    );
+
+    assertEquals(fakePython.toAbsolutePath().normalize(), factory.pythonExecutable());
+    assertTrue(!factory.environment().pipAvailable());
+  }
+
+  @Test
   void wrapsMissingZenmapPythonWithActionableMessageForPythonExecutable() {
     ExtensionDataPaths paths = new ExtensionDataPaths(tempDir.resolve("localappdata/BurpPythonIDE"));
     IllegalStateException error =

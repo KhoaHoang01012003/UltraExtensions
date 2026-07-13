@@ -49,7 +49,7 @@ final class PackageManagerIntegrationTest {
             new PackageSettingsStore(paths.settings().resolve("pip.properties")),
             new PackageInventoryReader(new PackageCatalog(List.of())),
             new ExtensionDataCleaner(paths, runtimeFactory.userPackages()), new EmbeddedPipRunner(),
-            runtimeFactory.userPackages(), new PackageCatalog(List.of()), false, runtimeFactory::pythonExecutable
+            runtimeFactory.userPackages(), new PackageCatalog(List.of()), false, true, runtimeFactory::pythonExecutable
         );
         Path wheel = createWheel(tempDir.resolve("demo_package-1.0.0-py3-none-any.whl"));
 

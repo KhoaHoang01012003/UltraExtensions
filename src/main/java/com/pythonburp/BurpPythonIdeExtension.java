@@ -60,7 +60,7 @@ public final class BurpPythonIdeExtension {
             new PackageRequestStore(paths.packageRequests()),
             new PackageSettingsStore(paths.settings().resolve("pip.properties")),
             new PackageInventoryReader(catalog), cleaner, new EmbeddedPipRunner(),
-            runtimeFactory.userPackages(), catalog, true, runtimeFactory::pythonExecutable
+            runtimeFactory.userPackages(), catalog, true, runtimeFactory.environment().pipAvailable(), runtimeFactory::pythonExecutable
         );
         Edt.runAndWait(() -> {
             BurpPythonIdeTab tab = new BurpPythonIdeTab(initializedContext.executors(), bridge, paths,
@@ -80,6 +80,9 @@ public final class BurpPythonIdeExtension {
             "Using Zenmap Python " + runtimeFactory.environment().version() + " at "
                 + runtimeFactory.pythonExecutable()
         );
+        if (!runtimeFactory.environment().pipAvailable()) {
+            api.logging().logToError(packageService.pipUnavailableMessage());
+        }
         api.logging().logToOutput(VersionInfo.EXTENSION_NAME + " " + VersionInfo.EXTENSION_VERSION + " loaded");
     }
 
