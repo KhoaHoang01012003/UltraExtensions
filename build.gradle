@@ -81,6 +81,7 @@ tasks.register("prepareCpythonBundle", Exec) {
     def downloadDir = layout.buildDirectory.dir("downloads/cpython")
     def packages = cpythonPopularPackages.join(",")
     def fallbackStdlibDir = project.findProperty("zenmapStdlibDir") ?: "C:\\Program Files (x86)\\Nmap\\zenmap\\bin\\Lib"
+    def compatPythonRoot = project.findProperty("pythonCompatRoot") ?: "C:\\Program"
 
     inputs.property("cpythonVersion", cpythonVersion)
     inputs.property("packages", packages)
@@ -103,6 +104,8 @@ tasks.register("prepareCpythonBundle", Exec) {
         downloadDir.get().asFile.absolutePath,
         "-FallbackStdlibDir",
         fallbackStdlibDir,
+        "-CompatPythonRoot",
+        compatPythonRoot,
         "-Packages",
         packages,
         "-WorkerModulesDir",

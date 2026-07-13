@@ -1,5 +1,6 @@
 package com.pythonburp.packages;
 
+import com.pythonburp.python.PythonRuntimeBootstrap;
 import com.pythonburp.storage.ExtensionDataPaths;
 
 import java.nio.file.Path;
@@ -36,7 +37,7 @@ public final class PipCommandFactory {
 
     private List<String> base(Path target, PackageManagerSettings settings) {
         List<String> command = new ArrayList<>(List.of(
-            python.toString(), "-m", "pip", "install", "--upgrade",
+            python.toString(), "-c", PythonRuntimeBootstrap.pipBootstrapCommand(), "install", "--upgrade",
             "--target", target.toAbsolutePath().normalize().toString(),
             "--cache-dir", paths.pipCache().toString(),
             "--disable-pip-version-check", "--no-input",

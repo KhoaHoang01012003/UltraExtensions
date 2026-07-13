@@ -18,68 +18,6 @@ import java.util.Comparator;
 import java.util.concurrent.TimeUnit;
 
 public final class CPythonWorkerRuntime implements PythonRuntime {
-    private static final String SITE_CUSTOMIZE = """
-        import builtins
-        import os
-        import pathlib
-        import sys
-        import time
-        import uuid
-
-        rpc_dir = os.environ.get("BURP_PYTHON_RPC_DIR", "")
-
-        def _rpc(fields):
-            if not rpc_dir:
-                raise RuntimeError("BURP_PYTHON_RPC_DIR is not configured")
-            request_id = uuid.uuid4().hex
-            root = pathlib.Path(rpc_dir)
-            request = root / f"{request_id}.request"
-            response = root / f"{request_id}.response"
-            request.write_text(
-                "\\n".join([*[f"{key}={value or ''}" for key, value in fields.items()], "__end=1", ""]),
-                encoding="utf-8",
-            )
-            deadline = time.monotonic() + 3600
-            while not response.exists():
-                if time.monotonic() > deadline:
-                    raise TimeoutError(f"Timed out waiting for Burp RPC response: {fields.get('operation', '')}")
-                time.sleep(0.025)
-            payload = {}
-            for line in response.read_text(encoding="utf-8-sig").splitlines():
-                key, _, value = line.partition("=")
-                payload[key] = value.replace("\\\\n", "\\n").replace("\\\\r", "\\r")
-            return payload
-
-        def _burp_input(prompt=""):
-            payload = _rpc({"operation": "stdin.read", "prompt": prompt or ""})
-            if payload.get("ok") != "true":
-                raise EOFError(payload.get("error", "Interactive input failed"))
-            return payload.get("text", "")
-
-        fallback_stdlib = os.environ.get("BURP_PYTHON_FALLBACK_STDLIB_ROOT", "")
-        if fallback_stdlib and os.path.isdir(fallback_stdlib) and fallback_stdlib not in sys.path:
-            sys.path.insert(0, fallback_stdlib)
-
-        class _BurpStdin:
-            encoding = "utf-8"
-
-            def readline(self, *args, **kwargs):
-                return _burp_input() + "\\n"
-
-            def read(self, *args, **kwargs):
-                return _burp_input()
-
-            def readable(self):
-                return True
-
-            def isatty(self):
-                return False
-
-        if rpc_dir:
-            builtins.input = _burp_input
-            sys.stdin = _BurpStdin()
-        """;
-
     private final CPythonWorkerCommand command;
     private final Path workingDirectory;
     private final BurpBridge bridge;
@@ -87,6 +25,8 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
     private final Path helperRoot;
     private final List<Path> extraPythonPaths;
     private final Path fallbackStdlibRoot;
+    private final Path compatNativeRoot;
+    private final Path pipBootstrapRoot;
     private final InteractiveInputHandler inputHandler;
 
     public CPythonWorkerRuntime(CPythonWorkerCommand command, Path workingDirectory) {
@@ -112,12 +52,20 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
     public CPythonWorkerRuntime(CPythonWorkerCommand command, Path workingDirectory, BurpBridge bridge,
                                 Path userPackages, Path helperRoot, List<Path> extraPythonPaths,
                                 InteractiveInputHandler inputHandler) {
-        this(command, workingDirectory, bridge, userPackages, helperRoot, extraPythonPaths, null, inputHandler);
+        this(command, workingDirectory, bridge, userPackages, helperRoot, extraPythonPaths, null, null, null, inputHandler);
     }
 
     public CPythonWorkerRuntime(CPythonWorkerCommand command, Path workingDirectory, BurpBridge bridge,
                                 Path userPackages, Path helperRoot, List<Path> extraPythonPaths,
                                 Path fallbackStdlibRoot, InteractiveInputHandler inputHandler) {
+        this(command, workingDirectory, bridge, userPackages, helperRoot, extraPythonPaths,
+            fallbackStdlibRoot, null, null, inputHandler);
+    }
+
+    public CPythonWorkerRuntime(CPythonWorkerCommand command, Path workingDirectory, BurpBridge bridge,
+                                Path userPackages, Path helperRoot, List<Path> extraPythonPaths,
+                                Path fallbackStdlibRoot, Path compatNativeRoot, Path pipBootstrapRoot,
+                                InteractiveInputHandler inputHandler) {
         this.command = Objects.requireNonNull(command, "command");
         this.workingDirectory = Objects.requireNonNull(workingDirectory, "workingDirectory").toAbsolutePath().normalize();
         this.bridge = Objects.requireNonNull(bridge, "bridge");
@@ -128,6 +76,8 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
             .map(path -> path.toAbsolutePath().normalize())
             .toList();
         this.fallbackStdlibRoot = fallbackStdlibRoot == null ? null : fallbackStdlibRoot.toAbsolutePath().normalize();
+        this.compatNativeRoot = compatNativeRoot == null ? null : compatNativeRoot.toAbsolutePath().normalize();
+        this.pipBootstrapRoot = pipBootstrapRoot == null ? null : pipBootstrapRoot.toAbsolutePath().normalize();
         this.inputHandler = Objects.requireNonNull(inputHandler, "inputHandler");
     }
 
@@ -142,7 +92,6 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
             Files.createDirectories(workingDirectory);
             Files.createDirectories(userPackages);
             Files.createDirectories(helperRoot);
-            writeSiteCustomize();
             rpcDirectory = Files.createTempDirectory(workingDirectory, "rpc-");
 
             InvocationPlan invocation = buildInvocation(request);
@@ -150,11 +99,18 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
             launcher = invocation.launcher();
             ProcessBuilder builder = new ProcessBuilder(invocation.command())
                 .directory(workingDirectory.toFile());
-            builder.environment().put("BURP_PYTHON_RPC_DIR", rpcDirectory.toString());
-            builder.environment().put("BURP_PYTHON_USER_PACKAGES", userPackages.toString());
-            builder.environment().put("BURP_PYTHON_HELPER_ROOT", helperRoot.toString());
+            builder.environment().put(PythonRuntimeBootstrap.ENV_RPC_DIR, rpcDirectory.toString());
+            builder.environment().put(PythonRuntimeBootstrap.ENV_USER_PACKAGES, userPackages.toString());
+            builder.environment().put(PythonRuntimeBootstrap.ENV_HELPER_ROOT, helperRoot.toString());
             if (fallbackStdlibRoot != null) {
-                builder.environment().put("BURP_PYTHON_FALLBACK_STDLIB_ROOT", fallbackStdlibRoot.toString());
+                builder.environment().put(PythonRuntimeBootstrap.ENV_FALLBACK_STDLIB_ROOT, fallbackStdlibRoot.toString());
+            }
+            if (compatNativeRoot != null) {
+                builder.environment().put(PythonRuntimeBootstrap.ENV_COMPAT_NATIVE_ROOT, compatNativeRoot.toString());
+                prependPath(builder.environment(), "PATH", compatNativeRoot.toString());
+            }
+            if (pipBootstrapRoot != null) {
+                builder.environment().put(PythonRuntimeBootstrap.ENV_PIP_ROOT, pipBootstrapRoot.toString());
             }
             String existingPythonPath = builder.environment().getOrDefault("PYTHONPATH", "");
             String computedPythonPath = pythonPathPrefix();
@@ -212,26 +168,22 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
 
     private InvocationPlan buildInvocation(ScriptRunRequest request) throws IOException {
         if (request.mode() == ScriptExecutionMode.CUSTOM_COMMAND) {
-            return new InvocationPlan(
-                command.commandForArguments(PythonCommandLineParser.parseTail(request.commandTail())),
-                null,
-                null
-            );
+            List<String> arguments = PythonCommandLineParser.parseTail(request.commandTail());
+            if (shouldUseRawCustomCommand(arguments)) {
+                return new InvocationPlan(command.commandForArguments(arguments), null, null);
+            }
+            Path launcher = Files.createTempFile(workingDirectory, "burp-python-custom-launcher-", ".py");
+            Files.writeString(launcher, PythonRuntimeBootstrap.customCommandLauncher());
+            List<String> commandLine = new java.util.ArrayList<>(command.commandFor(launcher));
+            commandLine.addAll(arguments);
+            return new InvocationPlan(List.copyOf(commandLine), null, launcher);
         }
 
         Path script = Files.createTempFile(workingDirectory, "burp-python-", ".py");
         Files.writeString(script, request.source());
         Path launcher = Files.createTempFile(workingDirectory, "burp-python-launcher-", ".py");
-        Files.writeString(launcher, """
-            import runpy
-            import sys
-            runpy.run_path(sys.argv[1], run_name="__main__")
-            """, StandardCharsets.UTF_8);
+        Files.writeString(launcher, PythonRuntimeBootstrap.editorLauncher());
         return new InvocationPlan(command.commandFor(launcher, script), script, launcher);
-    }
-
-    private void writeSiteCustomize() throws IOException {
-        Files.writeString(helperRoot.resolve("sitecustomize.py"), SITE_CUSTOMIZE, StandardCharsets.UTF_8);
     }
 
     private String pythonPathPrefix() {
@@ -243,6 +195,14 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
             value.append(File.pathSeparator).append(path);
         }
         return value.toString();
+    }
+
+    private boolean shouldUseRawCustomCommand(List<String> arguments) {
+        if (arguments.isEmpty()) {
+            return true;
+        }
+        String first = arguments.getFirst();
+        return first.startsWith("-") && !"-m".equals(first) && !"-c".equals(first);
     }
 
     @Override
@@ -385,6 +345,16 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
 
     private static String text(ByteArrayOutputStream stream) {
         return stream.toString(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private static void prependPath(Map<String, String> environment, String key, String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        String existing = environment.getOrDefault(key, "");
+        environment.put(key, existing == null || existing.isBlank()
+            ? value
+            : value + File.pathSeparator + existing);
     }
 
     private static void deleteTree(Path root) throws IOException {

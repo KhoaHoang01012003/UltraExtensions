@@ -5,11 +5,13 @@ import com.pythonburp.storage.ExtensionDataPaths;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.io.File;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -20,16 +22,8 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     public static final String HELPER_STAGE_ID = "python-worker-burp-rpc2";
     public static final String PIP_RESOURCE_ROOT = "/cpython/windows-x64/Lib/site-packages/pip";
     public static final String PIP_STAGE_ID = "python-worker-pip-bootstrap1";
-    public static final String STDLIB_SOURCE_RESOURCE_ROOT = "/cpython/windows-x64/stdlib-source";
-    public static final String STDLIB_STAGE_ID = "python-worker-stdlib-source3";
-    private static final String PIP_BOOTSTRAP_SITE_CUSTOMIZE = """
-        import os
-        import sys
-
-        fallback_stdlib = os.environ.get("BURP_PYTHON_FALLBACK_STDLIB_ROOT", "")
-        if fallback_stdlib and os.path.isdir(fallback_stdlib) and fallback_stdlib not in sys.path:
-            sys.path.insert(0, fallback_stdlib)
-        """;
+    public static final String COMPAT_RESOURCE_ROOT = "/cpython/windows-x64/python-compat-3.14";
+    public static final String COMPAT_STAGE_ID = "python-worker-compat3141";
 
     private final NmapRuntimePaths runtimePaths;
     private final ExtensionDataPaths paths;
@@ -37,6 +31,7 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     private final boolean pipAvailable;
     private final Path pipBootstrapRoot;
     private final Path stdlibFallbackRoot;
+    private final Path compatNativeRoot;
     private final String pipProbeWarning;
     private final Supplier<Path> helperRootSupplier;
 
@@ -60,16 +55,16 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     }
 
     public CPythonRuntimeFactory(PythonRuntimeEnvironment environment, ExtensionDataPaths paths) {
-        this(NmapRuntimePaths.fixed(), paths, environment, environment.pipAvailable(), null, null, null, null);
+        this(NmapRuntimePaths.fixed(), paths, environment, environment.pipAvailable(), null, null, null, null, null);
     }
 
     public CPythonRuntimeFactory(PythonRuntimeEnvironment environment, ExtensionDataPaths paths, Supplier<Path> helperRootSupplier) {
-        this(NmapRuntimePaths.fixed(), paths, environment, environment.pipAvailable(), null, null, null, helperRootSupplier);
+        this(NmapRuntimePaths.fixed(), paths, environment, environment.pipAvailable(), null, null, null, null, helperRootSupplier);
     }
 
     private CPythonRuntimeFactory(NmapRuntimePaths runtimePaths, ExtensionDataPaths paths,
                                   PythonRuntimeEnvironment environment, boolean pipAvailable, Path pipBootstrapRoot,
-                                  Path stdlibFallbackRoot,
+                                  Path stdlibFallbackRoot, Path compatNativeRoot,
                                   String pipProbeWarning, Supplier<Path> helperRootSupplier) {
         this.runtimePaths = Objects.requireNonNull(runtimePaths, "runtimePaths");
         this.paths = Objects.requireNonNull(paths, "paths");
@@ -77,6 +72,7 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
         this.pipAvailable = pipAvailable;
         this.pipBootstrapRoot = pipBootstrapRoot == null ? null : pipBootstrapRoot.toAbsolutePath().normalize();
         this.stdlibFallbackRoot = stdlibFallbackRoot == null ? null : stdlibFallbackRoot.toAbsolutePath().normalize();
+        this.compatNativeRoot = compatNativeRoot == null ? null : compatNativeRoot.toAbsolutePath().normalize();
         this.pipProbeWarning = pipProbeWarning;
         validateEnvironment(environment);
         this.helperRootSupplier = helperRootSupplier == null ? () -> {
@@ -106,6 +102,8 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
             helperRootSupplier.get(),
             extraPythonPaths(),
             stdlibFallbackRoot,
+            compatNativeRoot,
+            pipBootstrapRoot,
             inputHandler
         );
     }
@@ -127,15 +125,22 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     }
 
     public Map<String, String> pipEnvironmentOverrides() {
-        if (pipBootstrapRoot == null) {
-            return Map.of();
+        LinkedHashMap<String, String> overrides = new LinkedHashMap<>();
+        String pythonPath = joinedPaths(stdlibFallbackRoot, compatNativeRoot, pipBootstrapRoot);
+        if (!pythonPath.isBlank()) {
+            overrides.put("PYTHONPATH", pythonPath);
         }
-        return stdlibFallbackRoot == null
-            ? Map.of("PYTHONPATH", pipBootstrapRoot.toString())
-            : Map.of(
-                "PYTHONPATH", stdlibFallbackRoot + File.pathSeparator + pipBootstrapRoot,
-                "BURP_PYTHON_FALLBACK_STDLIB_ROOT", stdlibFallbackRoot.toString()
-            );
+        if (stdlibFallbackRoot != null) {
+            overrides.put(PythonRuntimeBootstrap.ENV_FALLBACK_STDLIB_ROOT, stdlibFallbackRoot.toString());
+        }
+        if (compatNativeRoot != null) {
+            overrides.put(PythonRuntimeBootstrap.ENV_COMPAT_NATIVE_ROOT, compatNativeRoot.toString());
+            overrides.put("PATH", compatNativeRoot.toString());
+        }
+        if (pipBootstrapRoot != null) {
+            overrides.put(PythonRuntimeBootstrap.ENV_PIP_ROOT, pipBootstrapRoot.toString());
+        }
+        return Map.copyOf(overrides);
     }
 
     public String pipProbeWarning() {
@@ -144,6 +149,10 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
 
     public Path stdlibFallbackRoot() {
         return stdlibFallbackRoot;
+    }
+
+    public Path compatNativeRoot() {
+        return compatNativeRoot;
     }
 
     private Path prepareHelperRoot() throws IOException {
@@ -157,13 +166,17 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     }
 
     private List<Path> extraPythonPaths() {
-        if (pipBootstrapRoot == null) {
-            return stdlibFallbackRoot == null ? List.of() : List.of(stdlibFallbackRoot);
+        ArrayList<Path> paths = new ArrayList<>();
+        if (compatNativeRoot != null) {
+            paths.add(compatNativeRoot);
         }
-        if (stdlibFallbackRoot == null) {
-            return List.of(pipBootstrapRoot);
+        if (stdlibFallbackRoot != null) {
+            paths.add(stdlibFallbackRoot);
         }
-        return List.of(stdlibFallbackRoot, pipBootstrapRoot);
+        if (pipBootstrapRoot != null) {
+            paths.add(pipBootstrapRoot);
+        }
+        return List.copyOf(paths);
     }
 
     public Path pythonExecutable() {
@@ -198,7 +211,11 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
                 false
             );
 
-            ProbeResult nativePip = run(executable, "-m", "pip", "--version");
+            CompatibilityRoots compatibilityRoots = stageBundledCompatibilityRoots(paths, environment.environmentKey());
+            Path stdlibFallbackRoot = compatibilityRoots.stdlibRoot() == null ? stdlibRoot : compatibilityRoots.stdlibRoot();
+            Path compatNativeRoot = compatibilityRoots.nativeRoot();
+
+            ProbeResult nativePip = run(executable, probeEnvironment(stdlibFallbackRoot, compatNativeRoot, null), pipProbeArguments("--version"));
             if (nativePip.succeeded()) {
                 return new ProbedRuntime(
                     runtimePaths,
@@ -214,43 +231,51 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
                     ),
                     true,
                     null,
-                    stdlibRoot,
+                    stdlibFallbackRoot,
+                    compatNativeRoot,
                     null
                 );
             }
 
-            Path stdlibFallbackRoot = stdlibRoot;
-            Path bundledStdlibRoot = stageBundledStdlibRoot(paths, environment.environmentKey());
-            if (bundledStdlibRoot != null) {
-                stdlibFallbackRoot = bundledStdlibRoot;
-            }
             Path pipBootstrapRoot = stageBundledPipRoot(paths, environment.environmentKey(), stdlibFallbackRoot);
-            Map<String, String> probeEnvironment = stdlibFallbackRoot == null
-                ? Map.of("PYTHONPATH", pipBootstrapRoot.toString())
-                : Map.of(
-                    "PYTHONPATH", stdlibFallbackRoot + File.pathSeparator + pipBootstrapRoot,
-                    "BURP_PYTHON_FALLBACK_STDLIB_ROOT", stdlibFallbackRoot.toString()
-                );
-            ProbeResult bundledPip = run(executable, probeEnvironment, "-m", "pip", "--version");
+            ProbeResult bundledPip = run(
+                executable,
+                probeEnvironment(stdlibFallbackRoot, compatNativeRoot, pipBootstrapRoot),
+                pipProbeArguments("--version")
+            );
             String pipProbeWarning = bundledPip.succeeded()
                 ? null
                 : "Bundled pip startup probe failed: " + bundledPip.describeFailure();
-            return new ProbedRuntime(runtimePaths, paths, environment, true, pipBootstrapRoot, stdlibFallbackRoot, pipProbeWarning);
+            return new ProbedRuntime(
+                runtimePaths,
+                paths,
+                environment,
+                bundledPip.succeeded(),
+                pipBootstrapRoot,
+                stdlibFallbackRoot,
+                compatNativeRoot,
+                pipProbeWarning
+            );
         } catch (IOException e) {
             throw new IllegalStateException("Failed to probe Zenmap Python at " + runtimePaths.zenmapBin() + ": " + e.getMessage(), e);
         }
     }
 
-    private static Path stageBundledStdlibRoot(ExtensionDataPaths paths, String environmentKey) throws IOException {
+    private static CompatibilityRoots stageBundledCompatibilityRoots(ExtensionDataPaths paths, String environmentKey) throws IOException {
         Path stageRoot = new ResourceDirectoryStager(
-            paths.runtimeAssetsRoot(environmentKey + "-bundled-stdlib"),
+            paths.runtimeAssetsRoot(environmentKey + "-compat-python"),
             CPythonRuntimeFactory.class,
-            STDLIB_SOURCE_RESOURCE_ROOT,
-            "stdlib",
-            STDLIB_STAGE_ID
+            COMPAT_RESOURCE_ROOT,
+            "compat",
+            COMPAT_STAGE_ID
         ).stage();
-        Path stdlibRoot = stageRoot.resolve("stdlib").normalize();
-        return Files.isDirectory(stdlibRoot) ? stdlibRoot : null;
+        Path compatRoot = stageRoot.resolve("compat").normalize();
+        Path stdlibRoot = compatRoot.resolve("Lib").normalize();
+        Path nativeRoot = compatRoot.resolve("DLLs").normalize();
+        return new CompatibilityRoots(
+            Files.isDirectory(stdlibRoot) ? stdlibRoot : null,
+            Files.isDirectory(nativeRoot) ? nativeRoot : null
+        );
     }
 
     private static Path stageBundledPipRoot(ExtensionDataPaths paths, String environmentKey, Path stdlibFallbackRoot) throws IOException {
@@ -261,7 +286,6 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
             "pip",
             PIP_STAGE_ID
         ).stage();
-        Files.writeString(root.resolve("sitecustomize.py"), PIP_BOOTSTRAP_SITE_CUSTOMIZE, StandardCharsets.UTF_8);
         if (stdlibFallbackRoot != null && Files.exists(stdlibFallbackRoot)) {
             Files.writeString(root.resolve(".stdlib-root-path"), stdlibFallbackRoot.toString(), StandardCharsets.UTF_8);
         }
@@ -281,9 +305,13 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     }
 
     private static ProbeResult run(Path executable, Map<String, String> environmentOverrides, String... arguments) throws IOException {
+        return run(executable, environmentOverrides, List.of(arguments));
+    }
+
+    private static ProbeResult run(Path executable, Map<String, String> environmentOverrides, List<String> arguments) throws IOException {
         ProcessBuilder builder = new ProcessBuilder();
         builder.command().add(executable.toString());
-        builder.command().addAll(java.util.List.of(arguments));
+        builder.command().addAll(arguments);
         applyEnvironment(builder.environment(), environmentOverrides);
         Process process = builder.start();
 
@@ -322,8 +350,50 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
                     : value + java.io.File.pathSeparator + existing);
                 continue;
             }
+            if ("PATH".equalsIgnoreCase(key)) {
+                String existing = target.getOrDefault(key, "");
+                target.put(key, existing == null || existing.isBlank()
+                    ? value
+                    : value + java.io.File.pathSeparator + existing);
+                continue;
+            }
             target.put(key, value);
         }
+    }
+
+    private static Map<String, String> probeEnvironment(Path stdlibFallbackRoot, Path compatNativeRoot, Path pipBootstrapRoot) {
+        LinkedHashMap<String, String> overrides = new LinkedHashMap<>();
+        String pythonPath = joinedPaths(stdlibFallbackRoot, compatNativeRoot, pipBootstrapRoot);
+        if (!pythonPath.isBlank()) {
+            overrides.put("PYTHONPATH", pythonPath);
+        }
+        if (stdlibFallbackRoot != null) {
+            overrides.put(PythonRuntimeBootstrap.ENV_FALLBACK_STDLIB_ROOT, stdlibFallbackRoot.toString());
+        }
+        if (compatNativeRoot != null) {
+            overrides.put(PythonRuntimeBootstrap.ENV_COMPAT_NATIVE_ROOT, compatNativeRoot.toString());
+            overrides.put("PATH", compatNativeRoot.toString());
+        }
+        if (pipBootstrapRoot != null) {
+            overrides.put(PythonRuntimeBootstrap.ENV_PIP_ROOT, pipBootstrapRoot.toString());
+        }
+        return Map.copyOf(overrides);
+    }
+
+    private static List<String> pipProbeArguments(String... pipArguments) {
+        ArrayList<String> arguments = new ArrayList<>();
+        arguments.add("-c");
+        arguments.add(PythonRuntimeBootstrap.pipBootstrapCommand());
+        arguments.addAll(List.of(pipArguments));
+        return List.copyOf(arguments);
+    }
+
+    private static String joinedPaths(Path... paths) {
+        return java.util.Arrays.stream(paths)
+            .filter(Objects::nonNull)
+            .map(Path::toString)
+            .reduce((left, right) -> left + File.pathSeparator + right)
+            .orElse("");
     }
 
     private static Thread reader(java.io.InputStream input, ByteArrayOutputStream output, String name) {
@@ -355,12 +425,16 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
 
     private record ProbedRuntime(NmapRuntimePaths runtimePaths, ExtensionDataPaths paths,
                                  PythonRuntimeEnvironment environment, boolean pipAvailable,
-                                 Path pipBootstrapRoot, Path stdlibFallbackRoot, String pipProbeWarning) {
+                                 Path pipBootstrapRoot, Path stdlibFallbackRoot, Path compatNativeRoot,
+                                 String pipProbeWarning) {
         private ProbedRuntime {
             Objects.requireNonNull(runtimePaths, "runtimePaths");
             Objects.requireNonNull(paths, "paths");
             Objects.requireNonNull(environment, "environment");
         }
+    }
+
+    private record CompatibilityRoots(Path stdlibRoot, Path nativeRoot) {
     }
 
     private CPythonRuntimeFactory(ProbedRuntime probedRuntime) {
@@ -371,6 +445,7 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
             probedRuntime.pipAvailable(),
             probedRuntime.pipBootstrapRoot(),
             probedRuntime.stdlibFallbackRoot(),
+            probedRuntime.compatNativeRoot(),
             probedRuntime.pipProbeWarning(),
             null
         );

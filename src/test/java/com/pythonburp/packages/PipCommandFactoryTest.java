@@ -25,6 +25,8 @@ final class PipCommandFactoryTest {
         assertTrue(command.contains("requests>=2.34,<3"));
         assertFalse(command.contains("cmd.exe"));
         assertFalse(command.contains("powershell.exe"));
+        assertTrue(command.contains("-c"));
+        assertFalse(command.contains("-m"));
         assertTrue(command.contains(paths.userPackages().toString()));
     }
 }

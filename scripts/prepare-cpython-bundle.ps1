@@ -11,6 +11,9 @@ param(
     [Parameter(Mandatory = $false)]
     [string] $FallbackStdlibDir,
 
+    [Parameter(Mandatory = $false)]
+    [string] $CompatPythonRoot,
+
     [Parameter(Mandatory = $true)]
     [string] $Packages,
 
@@ -28,11 +31,43 @@ if ($FallbackStdlibDir -and (Test-Path $FallbackStdlibDir)) {
 } elseif (Test-Path $defaultFallbackStdlibDir) {
     $resolvedFallbackStdlibDir = (Resolve-Path $defaultFallbackStdlibDir).Path
 }
+
+function Resolve-CompatPythonRoot {
+    param([string] $RequestedRoot)
+
+    if ($RequestedRoot) {
+        $candidate = Join-Path $RequestedRoot "python.exe"
+        if (Test-Path $candidate) {
+            return (Resolve-Path $RequestedRoot).Path
+        }
+    }
+
+    try {
+        $probe = & py -3.14 -c "import sys; print(sys.base_prefix)"
+        if ($LASTEXITCODE -eq 0 -and $probe) {
+            $resolved = $probe | Select-Object -First 1
+            if ($resolved -and (Test-Path (Join-Path $resolved.Trim() "python.exe"))) {
+                return (Resolve-Path $resolved.Trim()).Path
+            }
+        }
+    } catch {
+    }
+
+    $defaultRoot = "C:\Program"
+    if (Test-Path (Join-Path $defaultRoot "python.exe")) {
+        return (Resolve-Path $defaultRoot).Path
+    }
+
+    return $null
+}
+
+$resolvedCompatPythonRoot = Resolve-CompatPythonRoot -RequestedRoot $CompatPythonRoot
 $manifest = Join-Path $runtimeDir "burp-python-runtime.txt"
 $expectedManifest = @(
     "python=$PythonVersion",
     "packages=$Packages",
-    "fallbackStdlibDir=$resolvedFallbackStdlibDir"
+    "fallbackStdlibDir=$resolvedFallbackStdlibDir",
+    "compatPythonRoot=$resolvedCompatPythonRoot"
 )
 $marker = Join-Path $runtimeDir ".burp-python-cpython-bundle-ready"
 if (Test-Path $marker) {
@@ -120,6 +155,40 @@ if ($resolvedFallbackStdlibDir) {
     if ($LASTEXITCODE -ge 8) {
         throw "robocopy fallback stdlib source failed with exit code $LASTEXITCODE"
     }
+}
+
+if ($resolvedCompatPythonRoot) {
+    $compatRoot = Join-Path $runtimeDir "python-compat-3.14"
+    $compatLib = Join-Path $compatRoot "Lib"
+    $compatDlls = Join-Path $compatRoot "DLLs"
+    if (Test-Path $compatRoot) {
+        Remove-Item -LiteralPath $compatRoot -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $compatLib -Force | Out-Null
+    New-Item -ItemType Directory -Path $compatDlls -Force | Out-Null
+
+    $sourceLib = Join-Path $resolvedCompatPythonRoot "Lib"
+    $sourceDlls = Join-Path $resolvedCompatPythonRoot "DLLs"
+    if (-not (Test-Path $sourceLib)) {
+        throw "Compat Python Lib directory was not found at $sourceLib"
+    }
+    if (-not (Test-Path $sourceDlls)) {
+        throw "Compat Python DLLs directory was not found at $sourceDlls"
+    }
+
+    Write-Host "Copying compat stdlib from $sourceLib"
+    $null = robocopy $sourceLib $compatLib /E /NFL /NDL /NJH /NJS /NP /XD "__pycache__" "site-packages" /XF "*.pyc" "*.pyo"
+    if ($LASTEXITCODE -ge 8) {
+        throw "robocopy compat stdlib failed with exit code $LASTEXITCODE"
+    }
+
+    Write-Host "Copying compat native modules from $sourceDlls"
+    $null = robocopy $sourceDlls $compatDlls /E /NFL /NDL /NJH /NJS /NP /XF "*.pyc" "*.pyo"
+    if ($LASTEXITCODE -ge 8) {
+        throw "robocopy compat DLLs failed with exit code $LASTEXITCODE"
+    }
+} else {
+    Write-Warning "Python 3.14 compatibility root was not found; SSL compatibility pack will not be bundled."
 }
 
 Set-Content -Path $manifest -Encoding UTF8 -Value $expectedManifest

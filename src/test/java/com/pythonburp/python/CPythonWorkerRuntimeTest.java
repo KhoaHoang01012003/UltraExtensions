@@ -97,7 +97,7 @@ final class CPythonWorkerRuntimeTest {
     }
 
     @Test
-    void customCommandModePassesRawArgumentsAfterPythonExecutable() throws Exception {
+    void customCommandModeBootstrapsModuleInvocationThroughLauncher() throws Exception {
         Path fake = tempDir.resolve("custom-command.ps1");
         Files.writeString(fake, """
             Write-Output ($args -join "|")
@@ -113,7 +113,28 @@ final class CPythonWorkerRuntimeTest {
         ScriptRunResult result = runtime.execute(ScriptRunRequest.customCommand("-m abc -h xyz", Duration.ofSeconds(5)));
 
         assertEquals(ScriptStatus.SUCCEEDED, result.status(), result.errorMessage());
+        assertTrue(result.stdout().contains("burp-python-custom-launcher-"), result.stdout());
         assertTrue(result.stdout().contains("-m|abc|-h|xyz"), result.stdout());
+    }
+
+    @Test
+    void customCommandModePreservesRawInterpreterFlagsWhenBootstrapCannotHelp() throws Exception {
+        Path fake = tempDir.resolve("custom-raw-command.ps1");
+        Files.writeString(fake, """
+            Write-Output ($args -join "|")
+            exit 0
+            """);
+        CPythonWorkerRuntime runtime = new CPythonWorkerRuntime(
+            new CPythonWorkerCommand(List.of(
+                "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", fake.toString()
+            )),
+            tempDir.resolve("custom-raw-work")
+        );
+
+        ScriptRunResult result = runtime.execute(ScriptRunRequest.customCommand("-V", Duration.ofSeconds(5)));
+
+        assertEquals(ScriptStatus.SUCCEEDED, result.status(), result.errorMessage());
+        assertTrue(result.stdout().contains("-V"), result.stdout());
     }
 
     private CPythonWorkerRuntime runtimeWithFakeInterpreter(String body) throws Exception {
