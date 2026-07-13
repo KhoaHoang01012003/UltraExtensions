@@ -128,13 +128,12 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
         if (pipBootstrapRoot == null) {
             return Map.of();
         }
-        if (stdlibFallbackRoot == null) {
-            return Map.of("PYTHONPATH", pipBootstrapRoot.toString());
-        }
-        return Map.of(
-            "PYTHONPATH", pipBootstrapRoot.toString(),
-            "BURP_PYTHON_FALLBACK_STDLIB_ROOT", stdlibFallbackRoot.toString()
-        );
+        return stdlibFallbackRoot == null
+            ? Map.of("PYTHONPATH", pipBootstrapRoot.toString())
+            : Map.of(
+                "PYTHONPATH", stdlibFallbackRoot + File.pathSeparator + pipBootstrapRoot,
+                "BURP_PYTHON_FALLBACK_STDLIB_ROOT", stdlibFallbackRoot.toString()
+            );
     }
 
     public String pipProbeWarning() {
@@ -152,7 +151,13 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     }
 
     private List<Path> extraPythonPaths() {
-        return pipBootstrapRoot == null ? List.of() : List.of(pipBootstrapRoot);
+        if (pipBootstrapRoot == null) {
+            return stdlibFallbackRoot == null ? List.of() : List.of(stdlibFallbackRoot);
+        }
+        if (stdlibFallbackRoot == null) {
+            return List.of(pipBootstrapRoot);
+        }
+        return List.of(stdlibFallbackRoot, pipBootstrapRoot);
     }
 
     public Path pythonExecutable() {
@@ -211,7 +216,7 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
             Map<String, String> probeEnvironment = stdlibFallbackRoot == null
                 ? Map.of("PYTHONPATH", pipBootstrapRoot.toString())
                 : Map.of(
-                    "PYTHONPATH", pipBootstrapRoot.toString(),
+                    "PYTHONPATH", stdlibFallbackRoot + File.pathSeparator + pipBootstrapRoot,
                     "BURP_PYTHON_FALLBACK_STDLIB_ROOT", stdlibFallbackRoot.toString()
                 );
             ProbeResult bundledPip = run(executable, probeEnvironment, "-m", "pip", "--version");
