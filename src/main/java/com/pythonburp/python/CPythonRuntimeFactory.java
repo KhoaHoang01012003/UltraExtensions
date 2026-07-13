@@ -5,10 +5,9 @@ import com.pythonburp.storage.ExtensionDataPaths;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Path;
 import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -20,14 +19,14 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     public static final String HELPER_STAGE_ID = "python-worker-burp-rpc2";
     public static final String PIP_RESOURCE_ROOT = "/cpython/windows-x64/Lib/site-packages/pip";
     public static final String PIP_STAGE_ID = "python-worker-pip-bootstrap1";
-    public static final String STDLIB_ZIP_RESOURCE = "/cpython/windows-x64/python312.zip";
-    public static final String STDLIB_STAGE_ID = "python-worker-stdlib-fallback1";
+    public static final String STDLIB_SOURCE_RESOURCE_ROOT = "/cpython/windows-x64/stdlib-source";
+    public static final String STDLIB_STAGE_ID = "python-worker-stdlib-source2";
     private static final String PIP_BOOTSTRAP_SITE_CUSTOMIZE = """
         import os
         import sys
 
-        fallback_stdlib = os.environ.get("BURP_PYTHON_FALLBACK_STDLIB_ZIP", "")
-        if fallback_stdlib and os.path.exists(fallback_stdlib) and fallback_stdlib not in sys.path:
+        fallback_stdlib = os.environ.get("BURP_PYTHON_FALLBACK_STDLIB_ROOT", "")
+        if fallback_stdlib and os.path.isdir(fallback_stdlib) and fallback_stdlib not in sys.path:
             sys.path.append(fallback_stdlib)
         """;
 
@@ -36,7 +35,7 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     private final PythonRuntimeEnvironment environment;
     private final boolean pipAvailable;
     private final Path pipBootstrapRoot;
-    private final Path stdlibFallbackZip;
+    private final Path stdlibFallbackRoot;
     private final String pipProbeWarning;
     private final Supplier<Path> helperRootSupplier;
 
@@ -69,14 +68,14 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
 
     private CPythonRuntimeFactory(NmapRuntimePaths runtimePaths, ExtensionDataPaths paths,
                                   PythonRuntimeEnvironment environment, boolean pipAvailable, Path pipBootstrapRoot,
-                                  Path stdlibFallbackZip,
+                                  Path stdlibFallbackRoot,
                                   String pipProbeWarning, Supplier<Path> helperRootSupplier) {
         this.runtimePaths = Objects.requireNonNull(runtimePaths, "runtimePaths");
         this.paths = Objects.requireNonNull(paths, "paths");
         this.environment = Objects.requireNonNull(environment, "environment");
         this.pipAvailable = pipAvailable;
         this.pipBootstrapRoot = pipBootstrapRoot == null ? null : pipBootstrapRoot.toAbsolutePath().normalize();
-        this.stdlibFallbackZip = stdlibFallbackZip == null ? null : stdlibFallbackZip.toAbsolutePath().normalize();
+        this.stdlibFallbackRoot = stdlibFallbackRoot == null ? null : stdlibFallbackRoot.toAbsolutePath().normalize();
         this.pipProbeWarning = pipProbeWarning;
         validateEnvironment(environment);
         this.helperRootSupplier = helperRootSupplier == null ? () -> {
@@ -105,7 +104,7 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
             userPackages(),
             helperRootSupplier.get(),
             extraPythonPaths(),
-            stdlibFallbackZip,
+            stdlibFallbackRoot,
             inputHandler
         );
     }
@@ -130,12 +129,12 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
         if (pipBootstrapRoot == null) {
             return Map.of();
         }
-        if (stdlibFallbackZip == null) {
+        if (stdlibFallbackRoot == null) {
             return Map.of("PYTHONPATH", pipBootstrapRoot.toString());
         }
         return Map.of(
             "PYTHONPATH", pipBootstrapRoot.toString(),
-            "BURP_PYTHON_FALLBACK_STDLIB_ZIP", stdlibFallbackZip.toString()
+            "BURP_PYTHON_FALLBACK_STDLIB_ROOT", stdlibFallbackRoot.toString()
         );
     }
 
@@ -206,22 +205,22 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
                 );
             }
 
-            Path stdlibFallbackZip = stageBundledStdlibZip(paths, environment.environmentKey());
-            Path pipBootstrapRoot = stageBundledPipRoot(paths, environment.environmentKey(), stdlibFallbackZip);
+            Path stdlibFallbackRoot = stageBundledStdlibRoot(paths, environment.environmentKey());
+            Path pipBootstrapRoot = stageBundledPipRoot(paths, environment.environmentKey(), stdlibFallbackRoot);
             ProbeResult bundledPip = run(executable, Map.of(
                 "PYTHONPATH", pipBootstrapRoot.toString(),
-                "BURP_PYTHON_FALLBACK_STDLIB_ZIP", stdlibFallbackZip.toString()
+                "BURP_PYTHON_FALLBACK_STDLIB_ROOT", stdlibFallbackRoot.toString()
             ), "-m", "pip", "--version");
             String pipProbeWarning = bundledPip.succeeded()
                 ? null
                 : "Bundled pip startup probe failed: " + bundledPip.describeFailure();
-            return new ProbedRuntime(runtimePaths, paths, environment, true, pipBootstrapRoot, stdlibFallbackZip, pipProbeWarning);
+            return new ProbedRuntime(runtimePaths, paths, environment, true, pipBootstrapRoot, stdlibFallbackRoot, pipProbeWarning);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to probe Zenmap Python at " + runtimePaths.zenmapBin() + ": " + e.getMessage(), e);
         }
     }
 
-    private static Path stageBundledPipRoot(ExtensionDataPaths paths, String environmentKey, Path stdlibFallbackZip) throws IOException {
+    private static Path stageBundledPipRoot(ExtensionDataPaths paths, String environmentKey, Path stdlibFallbackRoot) throws IOException {
         Path root = new ResourceDirectoryStager(
             paths.runtimeAssetsRoot(environmentKey + "-bundled-pip"),
             CPythonRuntimeFactory.class,
@@ -229,27 +228,21 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
             "pip",
             PIP_STAGE_ID
         ).stage();
-        Files.writeString(root.resolve("sitecustomize.py"), PIP_BOOTSTRAP_SITE_CUSTOMIZE);
-        if (stdlibFallbackZip != null && Files.exists(stdlibFallbackZip)) {
-            Files.writeString(root.resolve(".stdlib-zip-path"), stdlibFallbackZip.toString());
+        Files.writeString(root.resolve("sitecustomize.py"), PIP_BOOTSTRAP_SITE_CUSTOMIZE, StandardCharsets.UTF_8);
+        if (stdlibFallbackRoot != null && Files.exists(stdlibFallbackRoot)) {
+            Files.writeString(root.resolve(".stdlib-root-path"), stdlibFallbackRoot.toString(), StandardCharsets.UTF_8);
         }
         return root;
     }
 
-    private static Path stageBundledStdlibZip(ExtensionDataPaths paths, String environmentKey) throws IOException {
-        Path targetRoot = paths.runtimeAssetsRoot(environmentKey + "-bundled-stdlib").resolve(STDLIB_STAGE_ID);
-        Files.createDirectories(targetRoot);
-        Path target = targetRoot.resolve("python312.zip");
-        if (Files.exists(target)) {
-            return target;
-        }
-        try (InputStream input = CPythonRuntimeFactory.class.getResourceAsStream(STDLIB_ZIP_RESOURCE)) {
-            if (input == null) {
-                throw new IOException("Missing resource " + STDLIB_ZIP_RESOURCE);
-            }
-            Files.copy(input, target, StandardCopyOption.REPLACE_EXISTING);
-        }
-        return target;
+    private static Path stageBundledStdlibRoot(ExtensionDataPaths paths, String environmentKey) throws IOException {
+        return new ResourceDirectoryStager(
+            paths.runtimeAssetsRoot(environmentKey + "-bundled-stdlib"),
+            CPythonRuntimeFactory.class,
+            STDLIB_SOURCE_RESOURCE_ROOT,
+            "stdlib",
+            STDLIB_STAGE_ID
+        ).stage().resolve("stdlib");
     }
 
     private static void validateEnvironment(PythonRuntimeEnvironment environment) {
@@ -339,7 +332,7 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
 
     private record ProbedRuntime(NmapRuntimePaths runtimePaths, ExtensionDataPaths paths,
                                  PythonRuntimeEnvironment environment, boolean pipAvailable,
-                                 Path pipBootstrapRoot, Path stdlibFallbackZip, String pipProbeWarning) {
+                                 Path pipBootstrapRoot, Path stdlibFallbackRoot, String pipProbeWarning) {
         private ProbedRuntime {
             Objects.requireNonNull(runtimePaths, "runtimePaths");
             Objects.requireNonNull(paths, "paths");
@@ -354,7 +347,7 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
             probedRuntime.environment(),
             probedRuntime.pipAvailable(),
             probedRuntime.pipBootstrapRoot(),
-            probedRuntime.stdlibFallbackZip(),
+            probedRuntime.stdlibFallbackRoot(),
             probedRuntime.pipProbeWarning(),
             null
         );

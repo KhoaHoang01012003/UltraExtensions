@@ -56,8 +56,8 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
                 raise EOFError(payload.get("error", "Interactive input failed"))
             return payload.get("text", "")
 
-        fallback_stdlib = os.environ.get("BURP_PYTHON_FALLBACK_STDLIB_ZIP", "")
-        if fallback_stdlib and os.path.exists(fallback_stdlib) and fallback_stdlib not in sys.path:
+        fallback_stdlib = os.environ.get("BURP_PYTHON_FALLBACK_STDLIB_ROOT", "")
+        if fallback_stdlib and os.path.isdir(fallback_stdlib) and fallback_stdlib not in sys.path:
             sys.path.append(fallback_stdlib)
 
         class _BurpStdin:
@@ -86,7 +86,7 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
     private final Path userPackages;
     private final Path helperRoot;
     private final List<Path> extraPythonPaths;
-    private final Path fallbackStdlibZip;
+    private final Path fallbackStdlibRoot;
     private final InteractiveInputHandler inputHandler;
 
     public CPythonWorkerRuntime(CPythonWorkerCommand command, Path workingDirectory) {
@@ -117,7 +117,7 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
 
     public CPythonWorkerRuntime(CPythonWorkerCommand command, Path workingDirectory, BurpBridge bridge,
                                 Path userPackages, Path helperRoot, List<Path> extraPythonPaths,
-                                Path fallbackStdlibZip, InteractiveInputHandler inputHandler) {
+                                Path fallbackStdlibRoot, InteractiveInputHandler inputHandler) {
         this.command = Objects.requireNonNull(command, "command");
         this.workingDirectory = Objects.requireNonNull(workingDirectory, "workingDirectory").toAbsolutePath().normalize();
         this.bridge = Objects.requireNonNull(bridge, "bridge");
@@ -127,7 +127,7 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
             .filter(Objects::nonNull)
             .map(path -> path.toAbsolutePath().normalize())
             .toList();
-        this.fallbackStdlibZip = fallbackStdlibZip == null ? null : fallbackStdlibZip.toAbsolutePath().normalize();
+        this.fallbackStdlibRoot = fallbackStdlibRoot == null ? null : fallbackStdlibRoot.toAbsolutePath().normalize();
         this.inputHandler = Objects.requireNonNull(inputHandler, "inputHandler");
     }
 
@@ -153,8 +153,8 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
             builder.environment().put("BURP_PYTHON_RPC_DIR", rpcDirectory.toString());
             builder.environment().put("BURP_PYTHON_USER_PACKAGES", userPackages.toString());
             builder.environment().put("BURP_PYTHON_HELPER_ROOT", helperRoot.toString());
-            if (fallbackStdlibZip != null) {
-                builder.environment().put("BURP_PYTHON_FALLBACK_STDLIB_ZIP", fallbackStdlibZip.toString());
+            if (fallbackStdlibRoot != null) {
+                builder.environment().put("BURP_PYTHON_FALLBACK_STDLIB_ROOT", fallbackStdlibRoot.toString());
             }
             String existingPythonPath = builder.environment().getOrDefault("PYTHONPATH", "");
             String computedPythonPath = pythonPathPrefix();
