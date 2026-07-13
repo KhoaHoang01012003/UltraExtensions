@@ -67,7 +67,8 @@ $expectedManifest = @(
     "python=$PythonVersion",
     "packages=$Packages",
     "fallbackStdlibDir=$resolvedFallbackStdlibDir",
-    "compatPythonRoot=$resolvedCompatPythonRoot"
+    "compatPythonRoot=$resolvedCompatPythonRoot",
+    "compatNativeMode=ssl-only-v2"
 )
 $marker = Join-Path $runtimeDir ".burp-python-cpython-bundle-ready"
 if (Test-Path $marker) {
@@ -182,11 +183,24 @@ if ($resolvedCompatPythonRoot) {
         throw "robocopy compat stdlib failed with exit code $LASTEXITCODE"
     }
 
-    Write-Host "Copying compat native modules from $sourceDlls"
-    $null = robocopy $sourceDlls $compatDlls /E /NFL /NDL /NJH /NJS /NP /XF "*.pyc" "*.pyo"
-    if ($LASTEXITCODE -ge 8) {
-        throw "robocopy compat DLLs failed with exit code $LASTEXITCODE"
+    $nativeCompatFiles = @(
+        "_ssl.pyd",
+        "_hashlib.pyd",
+        "libssl-3.dll",
+        "libcrypto-3.dll",
+        "libffi-8.dll"
+    )
+    Write-Host "Copying compat native SSL files from $sourceDlls"
+    foreach ($fileName in $nativeCompatFiles) {
+        $sourceFile = Join-Path $sourceDlls $fileName
+        if (-not (Test-Path $sourceFile)) {
+            throw "Compat native file was not found at $sourceFile"
+        }
+        Copy-Item -LiteralPath $sourceFile -Destination (Join-Path $compatDlls $fileName) -Force
     }
+    Get-ChildItem -LiteralPath $compatDlls -Force | Where-Object {
+        $nativeCompatFiles -notcontains $_.Name
+    } | Remove-Item -Recurse -Force
 } else {
     Write-Warning "Python 3.14 compatibility root was not found; SSL compatibility pack will not be bundled."
 }

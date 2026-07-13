@@ -23,7 +23,7 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     public static final String PIP_RESOURCE_ROOT = "/cpython/windows-x64/Lib/site-packages/pip";
     public static final String PIP_STAGE_ID = "python-worker-pip-bootstrap1";
     public static final String COMPAT_RESOURCE_ROOT = "/cpython/windows-x64/python-compat-3.14";
-    public static final String COMPAT_STAGE_ID = "python-worker-compat3141";
+    public static final String COMPAT_STAGE_ID = "python-worker-compat3142";
 
     private final NmapRuntimePaths runtimePaths;
     private final ExtensionDataPaths paths;
