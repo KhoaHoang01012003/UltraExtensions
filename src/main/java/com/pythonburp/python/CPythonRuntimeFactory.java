@@ -163,7 +163,7 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
         try {
             Path executable = runtimePaths.pythonExecutable();
             ProbeResult metadata = run(executable, "-c",
-                "import os, platform, sys, sysconfig; stdlib = sysconfig.get_path('stdlib') or os.path.dirname(os.__file__); print('|'.join([str(sys.version_info[0]), str(sys.version_info[1]), str(sys.version_info[2]), platform.system(), platform.machine(), sys.executable, stdlib]))");
+                "import os, platform, sys; stdlib = os.path.dirname(getattr(os, '__file__', '') or ''); print('|'.join([str(sys.version_info[0]), str(sys.version_info[1]), str(sys.version_info[2]), platform.system(), platform.machine(), sys.executable, stdlib]))");
             if (!metadata.succeeded()) {
                 throw new IOException("Python metadata probe failed: " + metadata.describeFailure());
             }
@@ -208,10 +208,13 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
 
             Path stdlibFallbackRoot = stdlibRoot;
             Path pipBootstrapRoot = stageBundledPipRoot(paths, environment.environmentKey(), stdlibFallbackRoot);
-            ProbeResult bundledPip = run(executable, Map.of(
-                "PYTHONPATH", pipBootstrapRoot.toString(),
-                "BURP_PYTHON_FALLBACK_STDLIB_ROOT", stdlibFallbackRoot.toString()
-            ), "-m", "pip", "--version");
+            Map<String, String> probeEnvironment = stdlibFallbackRoot == null
+                ? Map.of("PYTHONPATH", pipBootstrapRoot.toString())
+                : Map.of(
+                    "PYTHONPATH", pipBootstrapRoot.toString(),
+                    "BURP_PYTHON_FALLBACK_STDLIB_ROOT", stdlibFallbackRoot.toString()
+                );
+            ProbeResult bundledPip = run(executable, probeEnvironment, "-m", "pip", "--version");
             String pipProbeWarning = bundledPip.succeeded()
                 ? null
                 : "Bundled pip startup probe failed: " + bundledPip.describeFailure();
