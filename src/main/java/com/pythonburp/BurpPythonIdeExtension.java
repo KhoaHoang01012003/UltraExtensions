@@ -17,8 +17,6 @@ import com.pythonburp.packages.PackageRequestStore;
 import com.pythonburp.packages.PackageSettingsStore;
 import com.pythonburp.packages.SharedPackageEnvironment;
 import com.pythonburp.python.CPythonRuntimeFactory;
-import com.pythonburp.python.RuntimeProvisioningOutcome;
-import com.pythonburp.python.RuntimeProvisioningWorkflow;
 import com.pythonburp.storage.ExtensionDataCleaner;
 import com.pythonburp.storage.ExtensionDataPaths;
 import com.pythonburp.ui.BurpPythonIdeTab;
@@ -26,41 +24,43 @@ import com.pythonburp.ui.BurpPythonIdeTab;
 import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
-import java.util.function.Supplier;
+import java.util.function.Function;
 
 public final class BurpPythonIdeExtension {
-    private final Supplier<RuntimeProvisioningOutcome> startupProvisioning;
+    private final Function<ExtensionDataPaths, CPythonRuntimeFactory> runtimeFactoryFactory;
     private ExtensionContext context;
 
     public BurpPythonIdeExtension() {
-        this(RuntimeProvisioningWorkflow.fixedWindowsDefault()::ensureReady);
+        this(CPythonRuntimeFactory::new);
     }
 
-    BurpPythonIdeExtension(Supplier<RuntimeProvisioningOutcome> startupProvisioning) {
-        this.startupProvisioning = Objects.requireNonNull(startupProvisioning, "startupProvisioning");
+    BurpPythonIdeExtension(Function<ExtensionDataPaths, CPythonRuntimeFactory> runtimeFactoryFactory) {
+        this.runtimeFactoryFactory = Objects.requireNonNull(runtimeFactoryFactory, "runtimeFactoryFactory");
     }
 
     public void initialize(MontoyaApi api) {
         closeContext();
         api.extension().setName(VersionInfo.EXTENSION_NAME);
-        RuntimeProvisioningOutcome provisioning = startupProvisioning.get();
-        if (!provisioning.ready()) {
-            api.logging().logToError(provisioning.message());
+        ExtensionDataPaths paths = ExtensionDataPaths.windowsDefault();
+        CPythonRuntimeFactory runtimeFactory;
+        try {
+            runtimeFactory = runtimeFactoryFactory.apply(paths);
+        } catch (RuntimeException e) {
+            api.logging().logToError(e.getMessage() == null ? e.toString() : e.getMessage());
             return;
         }
         ExtensionContext initializedContext = new ExtensionContext(api, new IdeExecutors(defaultScriptThreads()));
         this.context = initializedContext;
         BurpBridge bridge = new BurpBridge(new MontoyaHttpBridge(api));
-        ExtensionDataPaths paths = ExtensionDataPaths.windowsDefault();
         RuntimeActivityCoordinator coordinator = new RuntimeActivityCoordinator();
-        CPythonRuntimeFactory runtimeFactory = new CPythonRuntimeFactory(paths);
-        ExtensionDataCleaner cleaner = new ExtensionDataCleaner(paths);
+        ExtensionDataCleaner cleaner = new ExtensionDataCleaner(paths, runtimeFactory.userPackages());
         PackageCatalog catalog = loadCatalog(api);
         PackageManagerService packageService = new PackageManagerService(
-            paths, coordinator, new SharedPackageEnvironment(paths),
+            paths, coordinator, new SharedPackageEnvironment(paths, runtimeFactory.userPackages()),
             new PackageRequestStore(paths.packageRequests()),
             new PackageSettingsStore(paths.settings().resolve("pip.properties")),
-            new PackageInventoryReader(catalog), cleaner, new EmbeddedPipRunner(), runtimeFactory::pythonExecutable
+            new PackageInventoryReader(catalog), cleaner, new EmbeddedPipRunner(),
+            runtimeFactory.userPackages(), catalog, true, runtimeFactory::pythonExecutable
         );
         Edt.runAndWait(() -> {
             BurpPythonIdeTab tab = new BurpPythonIdeTab(initializedContext.executors(), bridge, paths,
@@ -76,6 +76,10 @@ public final class BurpPythonIdeExtension {
             }
         });
         api.extension().registerUnloadingHandler(() -> closeContext(initializedContext));
+        api.logging().logToOutput(
+            "Using Zenmap Python " + runtimeFactory.environment().version() + " at "
+                + runtimeFactory.pythonExecutable()
+        );
         api.logging().logToOutput(VersionInfo.EXTENSION_NAME + " " + VersionInfo.EXTENSION_VERSION + " loaded");
     }
 

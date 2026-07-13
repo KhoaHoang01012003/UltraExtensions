@@ -13,13 +13,19 @@ import java.util.List;
 
 public final class ExtensionDataCleaner {
     private final ExtensionDataPaths paths;
+    private final Path userPackages;
 
     public ExtensionDataCleaner(ExtensionDataPaths paths) {
+        this(paths, paths.userPackages());
+    }
+
+    public ExtensionDataCleaner(ExtensionDataPaths paths, Path userPackages) {
         this.paths = paths;
+        this.userPackages = paths.requireOwnedUnchecked(userPackages);
     }
 
     public void clearUserPackages() throws IOException {
-        clearDirectory(paths.userPackages());
+        clearDirectory(userPackages);
     }
 
     public void clearPipCache() throws IOException {

@@ -6,14 +6,18 @@ import burp.api.montoya.extension.ExtensionUnloadingHandler;
 import burp.api.montoya.logging.Logging;
 import burp.api.montoya.ui.UserInterface;
 import com.pythonburp.core.ExtensionContext;
-import com.pythonburp.python.RuntimeProvisioningOutcome;
+import com.pythonburp.python.CPythonRuntimeFactory;
+import com.pythonburp.python.PythonRuntimeEnvironment;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import javax.swing.UIManager;
 import javax.swing.SwingUtilities;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.RejectedExecutionException;
@@ -24,6 +28,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class BurpPythonIdeExtensionTest {
+    @TempDir
+    Path tempDir;
+
     @Test
     void unloadHandlerClosesExtensionContext() throws Exception {
         BurpPythonIdeExtension extension = readyExtension();
@@ -66,7 +73,7 @@ final class BurpPythonIdeExtensionTest {
     }
 
     @Test
-    void createsAndRegistersSuiteTabOnEventDispatchThread() {
+    void createsAndRegistersSuiteTabOnEventDispatchThread() throws Exception {
         BurpPythonIdeExtension extension = readyExtension();
         StubMontoyaApi stub = new StubMontoyaApi();
 
@@ -76,16 +83,16 @@ final class BurpPythonIdeExtensionTest {
     }
 
     @Test
-    void doesNotRegisterSuiteTabWhenStartupProvisioningFails() throws Exception {
+    void doesNotRegisterSuiteTabWhenRuntimeBootstrapFails() throws Exception {
         BurpPythonIdeExtension extension =
-            new BurpPythonIdeExtension(() -> RuntimeProvisioningOutcome.failure("admin declined"));
+            new BurpPythonIdeExtension(paths -> { throw new IllegalStateException("zenmap python missing"); });
         StubMontoyaApi stub = new StubMontoyaApi();
 
         extension.initialize(stub.api());
 
         assertEquals(0, stub.suiteTabRegistrations);
         assertNull(contextFrom(extension));
-        assertTrue(stub.errorLogs.stream().anyMatch(message -> message.contains("admin declined")));
+        assertTrue(stub.errorLogs.stream().anyMatch(message -> message.contains("zenmap python missing")));
     }
 
     private static ExtensionContext contextFrom(BurpPythonIdeExtension extension) throws Exception {
@@ -94,8 +101,14 @@ final class BurpPythonIdeExtensionTest {
         return (ExtensionContext) field.get(extension);
     }
 
-    private static BurpPythonIdeExtension readyExtension() {
-        return new BurpPythonIdeExtension(RuntimeProvisioningOutcome::success);
+    private BurpPythonIdeExtension readyExtension() throws Exception {
+        Path fakePython = Files.writeString(tempDir.resolve("python.exe"), "fake");
+        Path helperRoot = Files.createDirectories(tempDir.resolve("helper-root"));
+        return new BurpPythonIdeExtension(paths -> new CPythonRuntimeFactory(
+            new PythonRuntimeEnvironment(fakePython, 3, 14, 0, "Windows", "AMD64", true),
+            paths,
+            () -> helperRoot
+        ));
     }
 
     private static final class StubMontoyaApi {

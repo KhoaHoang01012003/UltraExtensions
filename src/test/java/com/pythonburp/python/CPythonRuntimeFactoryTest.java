@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.pythonburp.storage.ExtensionDataPaths;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -15,64 +15,47 @@ final class CPythonRuntimeFactoryTest {
   @TempDir Path tempDir;
 
   @Test
-  void extractsPythonExecutableBeneathInjectedNmapBinRoot() throws Exception {
-    Path nmapBin = Files.createDirectories(tempDir.resolve("Nmap/zenmap/bin"));
+  void exposesInjectedPythonExecutableAndInterpreterAwarePackageRoot() throws Exception {
+    Path fakePython = Files.writeString(tempDir.resolve("python.exe"), "fake");
+    Path helperRoot = Files.createDirectories(tempDir.resolve("helper-root"));
     ExtensionDataPaths paths = new ExtensionDataPaths(tempDir.resolve("localappdata/BurpPythonIDE"));
-    CPythonRuntimeFactory factory = new CPythonRuntimeFactory(new NmapRuntimePaths(nmapBin), paths);
+    CPythonRuntimeFactory factory = new CPythonRuntimeFactory(
+        new PythonRuntimeEnvironment(fakePython, 3, 14, 0, "Windows", "AMD64", true),
+        paths,
+        () -> helperRoot
+    );
 
     Path pythonExecutable = factory.pythonExecutable();
 
     assertEquals("python.exe", pythonExecutable.getFileName().toString());
-    assertTrue(
-        pythonExecutable.startsWith(
-            nmapBin.resolve("BurpPythonIDE").resolve("cpython-worker").normalize()));
-    assertTrue(
-        pythonExecutable.toString().contains(CPythonRuntimeFactory.RUNTIME_ID));
-    assertTrue(Files.exists(pythonExecutable));
+    assertEquals(fakePython.toAbsolutePath().normalize(), pythonExecutable);
+    assertEquals(
+        paths.root().resolve("packages/python-3.14-windows-x64"),
+        factory.userPackages());
   }
 
   @Test
-  void getExposesUserPackagesUnderExtensionDataRoot() throws Exception {
-    Path nmapBin = Files.createDirectories(tempDir.resolve("Nmap/zenmap/bin"));
+  void rejectsNonPython3Interpreter() throws Exception {
+    Path fakePython = Files.writeString(tempDir.resolve("python.exe"), "fake");
     ExtensionDataPaths paths = new ExtensionDataPaths(tempDir.resolve("localappdata/BurpPythonIDE"));
-    CPythonRuntimeFactory factory = new CPythonRuntimeFactory(new NmapRuntimePaths(nmapBin), paths);
+    PythonRuntimeEnvironment environment =
+        new PythonRuntimeEnvironment(fakePython, 2, 7, 18, "Windows", "AMD64", true);
 
-    try (PythonRuntime runtime = factory.get(new com.pythonburp.bridge.BurpBridge())) {
-      ScriptRunResult result =
-          runtime.execute(
-              "import os\nprint(os.environ.get('BURP_PYTHON_USER_PACKAGES'))\n",
-              Duration.ofSeconds(10));
+    IllegalStateException error = assertThrows(IllegalStateException.class, () ->
+        new CPythonRuntimeFactory(environment, paths, tempHelperSupplier()));
 
-      assertEquals(ScriptStatus.SUCCEEDED, result.status(), result.errorMessage());
-      assertTrue(
-          result.stdout().contains(paths.userPackages().toAbsolutePath().normalize().toString()));
-    }
+    assertTrue(error.getMessage().contains("Python 3"));
   }
 
   @Test
-  void wrapsMissingNmapDirectoryWithActionableMessageForPythonExecutable() {
+  void wrapsMissingZenmapPythonWithActionableMessageForPythonExecutable() {
     ExtensionDataPaths paths = new ExtensionDataPaths(tempDir.resolve("localappdata/BurpPythonIDE"));
-    CPythonRuntimeFactory factory =
-        new CPythonRuntimeFactory(new NmapRuntimePaths(tempDir.resolve("missing/zenmap/bin")), paths);
-
     IllegalStateException error =
-        assertThrows(IllegalStateException.class, factory::pythonExecutable);
+        assertThrows(IllegalStateException.class,
+            () -> new CPythonRuntimeFactory(new NmapRuntimePaths(tempDir.resolve("missing/zenmap/bin")), paths));
 
-    assertTrue(error.getMessage().contains("embedded CPython runtime"));
-    assertTrue(error.getCause().getMessage().contains("Nmap"));
-  }
-
-  @Test
-  void wrapsMissingNmapDirectoryWithActionableMessageForGet() {
-    ExtensionDataPaths paths = new ExtensionDataPaths(tempDir.resolve("localappdata/BurpPythonIDE"));
-    CPythonRuntimeFactory factory =
-        new CPythonRuntimeFactory(new NmapRuntimePaths(tempDir.resolve("missing/zenmap/bin")), paths);
-
-    IllegalStateException error =
-        assertThrows(IllegalStateException.class, () -> factory.get(new com.pythonburp.bridge.BurpBridge()));
-
-    assertTrue(error.getMessage().contains("embedded CPython runtime"));
-    assertTrue(error.getCause().getMessage().contains("Nmap"));
+    assertTrue(error.getMessage().contains("Failed to probe Zenmap Python"));
+    assertTrue(error.getCause().getMessage().contains("Zenmap"));
   }
 
   @Test
@@ -80,9 +63,18 @@ final class CPythonRuntimeFactoryTest {
     ExtensionDataPaths paths = new ExtensionDataPaths(tempDir.resolve("localappdata/BurpPythonIDE"));
     NmapRuntimePaths runtimePaths =
         new NmapRuntimePaths(tempDir.resolve("Nmap/zenmap/bin"));
+    Path fakePython = tempDir.resolve("python.exe");
+    PythonRuntimeEnvironment environment =
+        new PythonRuntimeEnvironment(fakePython, 3, 14, 0, "Windows", "AMD64", true);
 
     assertThrows(NullPointerException.class, () -> new CPythonRuntimeFactory((Path) null, paths));
     assertThrows(NullPointerException.class, () -> new CPythonRuntimeFactory((NmapRuntimePaths) null, paths));
     assertThrows(NullPointerException.class, () -> new CPythonRuntimeFactory(runtimePaths, null));
+    assertThrows(NullPointerException.class, () -> new CPythonRuntimeFactory((PythonRuntimeEnvironment) null, paths));
+    assertThrows(NullPointerException.class, () -> new CPythonRuntimeFactory(environment, null));
+  }
+
+  private Supplier<Path> tempHelperSupplier() {
+    return () -> tempDir.resolve("helper-root");
   }
 }

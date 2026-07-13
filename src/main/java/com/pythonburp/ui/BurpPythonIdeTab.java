@@ -27,6 +27,7 @@ import javax.swing.JFileChooser;
 import javax.swing.JPanel;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
+import javax.swing.JToggleButton;
 import javax.swing.JToolBar;
 import javax.swing.SwingUtilities;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -45,6 +46,8 @@ public final class BurpPythonIdeTab extends JPanel {
     private final ScriptExecutor scriptExecutor;
     private final IdeExecutors executors;
     private final BurpBridge bridge;
+    private final JToggleButton interactiveMode = new JToggleButton("Interactive");
+    private volatile boolean interactiveEnabled;
     private Future<ScriptRunResult> activeRun;
 
     public BurpPythonIdeTab(IdeExecutors executors, BurpBridge bridge) {
@@ -61,7 +64,7 @@ public final class BurpPythonIdeTab extends JPanel {
         super(new BorderLayout());
         this.executors = executors;
         this.bridge = bridge;
-        this.scriptExecutor = new ScriptExecutor(executors, () -> runtimeFactory.get(bridge), coordinator);
+        this.scriptExecutor = new ScriptExecutor(executors, () -> runtimeFactory.get(bridge, this::requestInteractiveInput), coordinator);
 
         JButton load = new JButton("Load");
         JButton saveAs = new JButton("Save As");
@@ -73,6 +76,10 @@ public final class BurpPythonIdeTab extends JPanel {
         run.addActionListener(event -> runScript());
         stop.addActionListener(event -> stopScript());
         clearLog.addActionListener(event -> console.clear());
+        interactiveMode.addActionListener(event -> {
+            interactiveEnabled = interactiveMode.isSelected();
+            console.appendSystem("Interactive mode " + (interactiveEnabled ? "enabled" : "disabled"));
+        });
 
         JToolBar toolbar = new JToolBar();
         toolbar.setFloatable(false);
@@ -81,6 +88,8 @@ public final class BurpPythonIdeTab extends JPanel {
         toolbar.addSeparator();
         toolbar.add(run);
         toolbar.add(stop);
+        toolbar.addSeparator();
+        toolbar.add(interactiveMode);
         toolbar.addSeparator();
         toolbar.add(clearLog);
 
@@ -110,12 +119,13 @@ public final class BurpPythonIdeTab extends JPanel {
         PackageCatalog catalog;
         try { catalog = PackageCatalogLoader.loadBundled(); }
         catch (IOException e) { catalog = new PackageCatalog(List.of()); }
-        ExtensionDataCleaner cleaner = new ExtensionDataCleaner(paths);
+        ExtensionDataCleaner cleaner = new ExtensionDataCleaner(paths, runtimeFactory.userPackages());
         PackageManagerService service = new PackageManagerService(
-            paths, coordinator, new SharedPackageEnvironment(paths),
+            paths, coordinator, new SharedPackageEnvironment(paths, runtimeFactory.userPackages()),
             new PackageRequestStore(paths.packageRequests()),
             new PackageSettingsStore(paths.settings().resolve("pip.properties")),
-            new PackageInventoryReader(catalog), cleaner, new EmbeddedPipRunner(), runtimeFactory::pythonExecutable
+            new PackageInventoryReader(catalog), cleaner, new EmbeddedPipRunner(),
+            runtimeFactory.userPackages(), catalog, true, runtimeFactory::pythonExecutable
         );
         return new Defaults(paths, coordinator, runtimeFactory, service);
     }
@@ -204,8 +214,16 @@ public final class BurpPythonIdeTab extends JPanel {
         Edt.requireEdt();
         if (activeRun != null && !activeRun.isDone()) {
             activeRun.cancel(true);
+            console.cancelPendingInput("Interactive input canceled because the script was stopped.");
             statusBar.setStatus("Stopping");
         }
+    }
+
+    private String requestInteractiveInput(String prompt) throws IOException, InterruptedException {
+        if (!interactiveEnabled) {
+            throw new IOException("Script requested interactive input. Enable Interactive mode and run again.");
+        }
+        return console.requestInput(prompt);
     }
 
     private void publishFailure(Future<ScriptRunResult> run, Exception e) {

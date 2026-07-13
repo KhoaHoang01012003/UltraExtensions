@@ -1,5 +1,7 @@
 package com.pythonburp.packages;
 
+import com.pythonburp.catalog.PackageCatalog;
+import com.pythonburp.catalog.PackageCatalogEntry;
 import com.pythonburp.concurrency.RuntimeActivityCoordinator;
 import com.pythonburp.storage.ExtensionDataCleaner;
 import com.pythonburp.storage.ExtensionDataPaths;
@@ -17,6 +19,9 @@ import java.util.function.Supplier;
 
 public final class PackageManagerService {
     private final ExtensionDataPaths paths;
+    private final Path userPackages;
+    private final PackageCatalog catalog;
+    private final boolean blockNativeCatalogInstalls;
     private final RuntimeActivityCoordinator coordinator;
     private final SharedPackageEnvironment environment;
     private final PackageRequestStore requestStore;
@@ -39,7 +44,7 @@ public final class PackageManagerService {
         Path python
     ) {
         this(paths, coordinator, environment, requestStore, settingsStore, inventoryReader,
-            cleaner, pipRunner, () -> python);
+            cleaner, pipRunner, paths.userPackages(), new PackageCatalog(List.of()), false, () -> python);
     }
 
     public PackageManagerService(
@@ -53,7 +58,28 @@ public final class PackageManagerService {
         EmbeddedPipRunner pipRunner,
         Supplier<Path> pythonSupplier
     ) {
+        this(paths, coordinator, environment, requestStore, settingsStore, inventoryReader,
+            cleaner, pipRunner, paths.userPackages(), new PackageCatalog(List.of()), false, pythonSupplier);
+    }
+
+    public PackageManagerService(
+        ExtensionDataPaths paths,
+        RuntimeActivityCoordinator coordinator,
+        SharedPackageEnvironment environment,
+        PackageRequestStore requestStore,
+        PackageSettingsStore settingsStore,
+        PackageInventoryReader inventoryReader,
+        ExtensionDataCleaner cleaner,
+        EmbeddedPipRunner pipRunner,
+        Path userPackages,
+        PackageCatalog catalog,
+        boolean blockNativeCatalogInstalls,
+        Supplier<Path> pythonSupplier
+    ) {
         this.paths = paths;
+        this.userPackages = paths.requireOwnedUnchecked(userPackages);
+        this.catalog = catalog == null ? new PackageCatalog(List.of()) : catalog;
+        this.blockNativeCatalogInstalls = blockNativeCatalogInstalls;
         this.coordinator = coordinator;
         this.environment = environment;
         this.requestStore = requestStore;
@@ -101,7 +127,7 @@ public final class PackageManagerService {
     }
 
     public List<PackageInventoryEntry> inventory() throws IOException {
-        return inventoryReader.read(paths.userPackages());
+        return inventoryReader.read(userPackages);
     }
 
     public PackageOperationResult clearUserPackages() {
@@ -142,6 +168,7 @@ public final class PackageManagerService {
         if (reset) return failure("Extension reload is required after reset");
         try (var ignored = coordinator.beginPackageMutation()) {
             PackageManagerSettings settings = settingsStore.load();
+            validateRequests(next);
             PipCommandFactory commands = new PipCommandFactory(pythonSupplier.get(), paths);
             environment.replaceWith(staging -> {
                 for (PackageRequest request : next) {
@@ -164,6 +191,46 @@ public final class PackageManagerService {
             return success("Package environment updated");
         } catch (Exception e) {
             return failure(e.getMessage());
+        }
+    }
+
+    private void validateRequests(List<PackageRequest> requests) throws IOException {
+        if (!blockNativeCatalogInstalls || requests.isEmpty()) {
+            return;
+        }
+        for (PackageRequest request : requests) {
+            switch (request.type()) {
+                case PYPI -> validateRequirement(request.value());
+                case REQUIREMENTS -> validateRequirementsFile(request.path());
+                case WHEEL -> {
+                }
+            }
+        }
+    }
+
+    private void validateRequirementsFile(Path requirements) throws IOException {
+        if (requirements == null || !Files.exists(requirements)) {
+            return;
+        }
+        for (String line : Files.readAllLines(requirements)) {
+            String value = line.trim();
+            if (value.isEmpty() || value.startsWith("#") || value.startsWith("-")) {
+                continue;
+            }
+            validateRequirement(value);
+        }
+    }
+
+    private void validateRequirement(String requirement) throws IOException {
+        String id = requirementId(requirement);
+        if (id.isBlank()) {
+            return;
+        }
+        PackageCatalogEntry entry = catalog.find(id).orElse(null);
+        if (entry != null && entry.nativeRequired()) {
+            throw new IOException(
+                "Package " + entry.name() + " requires native extensions and is disabled when using Zenmap Python."
+            );
         }
     }
 

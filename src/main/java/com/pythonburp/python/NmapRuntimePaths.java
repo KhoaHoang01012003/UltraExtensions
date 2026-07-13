@@ -23,6 +23,20 @@ final class NmapRuntimePaths {
     return zenmapBin;
   }
 
+  Path pythonExecutable() throws IOException {
+    if (!Files.isDirectory(zenmapBin)) {
+      throw new IOException("Expected Zenmap bin directory at " + zenmapBin + ".");
+    }
+    Path python = zenmapBin.resolve("python.exe").normalize();
+    if (!python.startsWith(zenmapBin)) {
+      throw new IOException("Refusing Python executable path outside Zenmap bin: " + python);
+    }
+    if (!Files.isRegularFile(python)) {
+      throw new IOException("Zenmap Python executable was not found at " + python + ".");
+    }
+    return python;
+  }
+
   Path workerCacheRoot() throws IOException {
     if (!Files.exists(zenmapBin)) {
       if (!endsWithZenmapBin()) {

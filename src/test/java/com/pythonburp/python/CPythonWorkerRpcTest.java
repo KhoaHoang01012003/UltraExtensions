@@ -71,4 +71,52 @@ final class CPythonWorkerRpcTest {
         assertTrue(result.stdout().contains("statusCode=201"), result.stdout());
         assertTrue(result.stdout().contains("body=created"), result.stdout());
     }
+
+    @Test
+    void dispatchesInteractiveInputRequestsFromWorkerProcess() throws Exception {
+        Path fake = tempDir.resolve("fake-python-stdin.ps1");
+        Files.writeString(fake, """
+            $rpc = $env:BURP_PYTHON_RPC_DIR
+            $request = Join-Path $rpc "1.request"
+            $response = Join-Path $rpc "1.response"
+            Set-Content -Path $request -Encoding UTF8 -Value @(
+                "operation=stdin.read",
+                "prompt=Enter target host",
+                "__end=1"
+            )
+            $deadline = (Get-Date).AddSeconds(10)
+            while (-not (Test-Path $response)) {
+                if ((Get-Date) -gt $deadline) {
+                    Write-Error "timed out waiting for stdin response"
+                    exit 3
+                }
+                Start-Sleep -Milliseconds 50
+            }
+            Get-Content $response
+            exit 0
+            """);
+        CPythonWorkerRuntime runtime = new CPythonWorkerRuntime(
+            new CPythonWorkerCommand(List.of(
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                fake.toString()
+            )),
+            tempDir.resolve("work"),
+            new BurpBridge(),
+            tempDir.resolve("user-packages"),
+            tempDir.resolve("helper-root"),
+            prompt -> {
+                assertEquals("Enter target host", prompt);
+                return "example.org";
+            }
+        );
+
+        ScriptRunResult result = runtime.execute("ignored by fake interpreter", Duration.ofSeconds(15));
+
+        assertEquals(ScriptStatus.SUCCEEDED, result.status(), result.errorMessage());
+        assertTrue(result.stdout().contains("text=example.org"), result.stdout());
+    }
 }

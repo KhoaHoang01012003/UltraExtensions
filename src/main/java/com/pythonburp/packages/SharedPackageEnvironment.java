@@ -11,9 +11,15 @@ import java.util.UUID;
 
 public final class SharedPackageEnvironment {
     private final ExtensionDataPaths paths;
+    private final Path activePackages;
 
     public SharedPackageEnvironment(ExtensionDataPaths paths) {
+        this(paths, paths.userPackages());
+    }
+
+    public SharedPackageEnvironment(ExtensionDataPaths paths, Path activePackages) {
         this.paths = paths;
+        this.activePackages = paths.requireOwnedUnchecked(activePackages);
     }
 
     public void replaceWith(Builder builder) throws IOException {
@@ -27,7 +33,7 @@ public final class SharedPackageEnvironment {
             throw e;
         }
 
-        Path active = paths.userPackages();
+        Path active = activePackages;
         Path old = paths.requireOwned(paths.packageStagingRoot().resolve("old-" + UUID.randomUUID()));
         Files.createDirectories(active.getParent());
         boolean movedOld = false;

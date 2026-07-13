@@ -3,17 +3,21 @@ package com.pythonburp.python;
 import com.pythonburp.bridge.BurpBridge;
 import com.pythonburp.storage.ExtensionDataPaths;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Objects;
 import java.util.function.Supplier;
 
 public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
-    public static final String RESOURCE_ROOT = "/cpython/windows-x64";
-    public static final String RUNTIME_ID = "cpython-3.12.10-popular-pypdf-rpc1";
+    public static final String HELPER_RESOURCE_ROOT = "/cpython/windows-x64/Lib/site-packages/burp";
+    public static final String HELPER_STAGE_ID = "python-worker-burp-rpc2";
 
     private final NmapRuntimePaths runtimePaths;
     private final ExtensionDataPaths paths;
+    private final PythonRuntimeEnvironment environment;
+    private final Supplier<Path> helperRootSupplier;
 
     public CPythonRuntimeFactory() {
         this(NmapRuntimePaths.fixed(), ExtensionDataPaths.windowsDefault());
@@ -28,43 +32,174 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     }
 
     CPythonRuntimeFactory(NmapRuntimePaths runtimePaths, ExtensionDataPaths paths) {
+        this(
+            Objects.requireNonNull(runtimePaths, "runtimePaths"),
+            Objects.requireNonNull(paths, "paths"),
+            probeEnvironment(runtimePaths),
+            null
+        );
+    }
+
+    public CPythonRuntimeFactory(PythonRuntimeEnvironment environment, ExtensionDataPaths paths) {
+        this(NmapRuntimePaths.fixed(), paths, environment, null);
+    }
+
+    public CPythonRuntimeFactory(PythonRuntimeEnvironment environment, ExtensionDataPaths paths, Supplier<Path> helperRootSupplier) {
+        this(NmapRuntimePaths.fixed(), paths, environment, helperRootSupplier);
+    }
+
+    private CPythonRuntimeFactory(NmapRuntimePaths runtimePaths, ExtensionDataPaths paths,
+                                  PythonRuntimeEnvironment environment, Supplier<Path> helperRootSupplier) {
         this.runtimePaths = Objects.requireNonNull(runtimePaths, "runtimePaths");
         this.paths = Objects.requireNonNull(paths, "paths");
+        this.environment = Objects.requireNonNull(environment, "environment");
+        validateEnvironment(environment);
+        this.helperRootSupplier = helperRootSupplier == null ? () -> {
+            try {
+                return prepareHelperRoot();
+            } catch (IOException e) {
+                throw new IllegalStateException("Failed to stage bundled Python helper assets", e);
+            }
+        } : helperRootSupplier;
     }
 
     @Override
     public PythonRuntime get() {
-        return get(new BurpBridge());
+        return get(new BurpBridge(), InteractiveInputHandler.disabled());
     }
 
     public PythonRuntime get(BurpBridge bridge) {
-        try {
-            Path runtimeRoot = prepareRuntimeRoot();
-            return new CPythonWorkerRuntime(
-                CPythonWorkerCommand.forExecutable(runtimeRoot.resolve("python.exe")),
-                runtimeRoot.resolve("work"),
-                bridge,
-                paths.userPackages()
-            );
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to prepare embedded CPython runtime", e);
-        }
+        return get(bridge, InteractiveInputHandler.disabled());
     }
 
-    public Path prepareRuntimeRoot() throws IOException {
-        return new CPythonBundleExtractor(
-            runtimePaths.workerCacheRoot(),
+    public PythonRuntime get(BurpBridge bridge, InteractiveInputHandler inputHandler) {
+        return new CPythonWorkerRuntime(
+            CPythonWorkerCommand.forExecutable(environment.executable()),
+            paths.runtimeWorkRoot(environment.environmentKey()),
+            bridge,
+            userPackages(),
+            helperRootSupplier.get(),
+            inputHandler
+        );
+    }
+
+    public Path userPackages() {
+        return paths.userPackages(environment.environmentKey());
+    }
+
+    public PythonRuntimeEnvironment environment() {
+        return environment;
+    }
+
+    private Path prepareHelperRoot() throws IOException {
+        return new ResourceDirectoryStager(
+            paths.runtimeAssetsRoot(environment.environmentKey()),
             CPythonRuntimeFactory.class,
-            RESOURCE_ROOT,
-            RUNTIME_ID
-        ).extract();
+            HELPER_RESOURCE_ROOT,
+            "burp",
+            HELPER_STAGE_ID
+        ).stage();
     }
 
     public Path pythonExecutable() {
+        return environment.executable();
+    }
+
+    private static PythonRuntimeEnvironment probeEnvironment(NmapRuntimePaths runtimePaths) {
         try {
-            return prepareRuntimeRoot().resolve("python.exe");
+            Path executable = runtimePaths.pythonExecutable();
+            ProbeResult metadata = run(executable, "-c",
+                "import platform, sys; print('|'.join([str(sys.version_info[0]), str(sys.version_info[1]), str(sys.version_info[2]), platform.system(), platform.machine(), sys.executable]))");
+            if (!metadata.succeeded()) {
+                throw new IOException("Python metadata probe failed: " + metadata.describeFailure());
+            }
+
+            String[] parts = metadata.stdout().strip().split("\\|", 6);
+            if (parts.length < 6) {
+                throw new IOException("Unexpected Python metadata output: " + metadata.stdout().strip());
+            }
+
+            ProbeResult pip = run(executable, "-m", "pip", "--version");
+            if (!pip.succeeded()) {
+                throw new IOException("Python pip probe failed: " + pip.describeFailure());
+            }
+
+            PythonRuntimeEnvironment environment = new PythonRuntimeEnvironment(
+                Path.of(parts[5]),
+                Integer.parseInt(parts[0]),
+                Integer.parseInt(parts[1]),
+                Integer.parseInt(parts[2]),
+                parts[3],
+                parts[4],
+                true
+            );
+            return environment;
         } catch (IOException e) {
-            throw new IllegalStateException("Failed to prepare embedded CPython runtime", e);
+            throw new IllegalStateException("Failed to probe Zenmap Python at " + runtimePaths.zenmapBin() + ": " + e.getMessage(), e);
+        }
+    }
+
+    private static void validateEnvironment(PythonRuntimeEnvironment environment) {
+        if (!environment.isPython3()) {
+            throw new IllegalStateException(
+                "Zenmap Python must be Python 3, but detected " + environment.version() + "."
+            );
+        }
+        if (!environment.pipAvailable()) {
+            throw new IllegalStateException(
+                "Zenmap Python at " + environment.executable() + " does not provide pip."
+            );
+        }
+    }
+
+    private static ProbeResult run(Path executable, String... arguments) throws IOException {
+        ProcessBuilder builder = new ProcessBuilder();
+        builder.command().add(executable.toString());
+        builder.command().addAll(java.util.List.of(arguments));
+        Process process = builder.start();
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+        Thread out = reader(process.getInputStream(), stdout, "burp-python-probe-stdout");
+        Thread err = reader(process.getErrorStream(), stderr, "burp-python-probe-stderr");
+        try {
+            if (!process.waitFor(Duration.ofSeconds(20).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                process.destroyForcibly();
+                throw new IOException("Timed out while probing Zenmap Python.");
+            }
+            out.join(java.util.concurrent.TimeUnit.SECONDS.toMillis(2));
+            err.join(java.util.concurrent.TimeUnit.SECONDS.toMillis(2));
+            return new ProbeResult(process.exitValue(), text(stdout), text(stderr));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while probing Zenmap Python.", e);
+        }
+    }
+
+    private static Thread reader(java.io.InputStream input, ByteArrayOutputStream output, String name) {
+        Thread thread = new Thread(() -> {
+            try (input) {
+                input.transferTo(output);
+            } catch (IOException ignored) {
+            }
+        }, name);
+        thread.setDaemon(true);
+        thread.start();
+        return thread;
+    }
+
+    private static String text(ByteArrayOutputStream stream) {
+        return stream.toString(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private record ProbeResult(int exitCode, String stdout, String stderr) {
+        boolean succeeded() {
+            return exitCode == 0;
+        }
+
+        String describeFailure() {
+            String details = stderr == null || stderr.isBlank() ? stdout : stderr;
+            return "exit code " + exitCode + (details == null || details.isBlank() ? "" : ": " + details.strip());
         }
     }
 }

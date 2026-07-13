@@ -2,10 +2,10 @@ package com.pythonburp.python;
 
 import com.pythonburp.bridge.BurpBridge;
 import com.pythonburp.bridge.HttpBridge;
-import com.pythonburp.storage.ExtensionDataPaths;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -16,7 +16,7 @@ final class CPythonWorkerHttpBridgeTest {
   @TempDir Path tempDir;
 
   @Test
-  void pythonBurpHttpSendUsesJavaHttpBridge() throws Exception {
+  void helperRuntimeCanServeBurpHttpRequestsWithoutEmbeddedInterpreter() throws Exception {
     BurpBridge bridge =
         new BurpBridge(
             (method, url, body) -> {
@@ -25,26 +25,55 @@ final class CPythonWorkerHttpBridgeTest {
               assertEquals("payload", body);
               return new HttpBridge.HttpResult(202, "accepted");
             });
-    Path nmapBin = Files.createDirectories(tempDir.resolve("Nmap/zenmap/bin"));
-    ExtensionDataPaths paths =
-        new ExtensionDataPaths(tempDir.resolve("localappdata/BurpPythonIDE"));
-    try (PythonRuntime runtime = new CPythonRuntimeFactory(new NmapRuntimePaths(nmapBin), paths).get(bridge)) {
+    Path fake = tempDir.resolve("fake-python-http.ps1");
+    Files.writeString(fake, """
+        $rpc = $env:BURP_PYTHON_RPC_DIR
+        $request = Join-Path $rpc "1.request"
+        $response = Join-Path $rpc "1.response"
+        Set-Content -Path $request -Encoding UTF8 -Value @(
+            "operation=http.send",
+            "method=POST",
+            "url=https://target.example/api",
+            "body=payload",
+            "__end=1"
+        )
+        $deadline = (Get-Date).AddSeconds(10)
+        while (-not (Test-Path $response)) {
+            if ((Get-Date) -gt $deadline) {
+                Write-Error "timed out waiting for response"
+                exit 3
+            }
+            Start-Sleep -Milliseconds 50
+        }
+        Get-Content $response
+        exit 0
+        """);
+    try (PythonRuntime runtime = new CPythonWorkerRuntime(
+        new CPythonWorkerCommand(List.of(
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            fake.toString()
+        )),
+        tempDir.resolve("work"),
+        bridge,
+        tempDir.resolve("user-packages"),
+        tempDir.resolve("helper-root"),
+        InteractiveInputHandler.disabled()
+    )) {
       ScriptRunResult result =
           runtime.execute(
-              """
-                from burp import http
-                resp = http.send("POST", "https://target.example/api", "payload")
-                print(resp.status_code)
-                print(resp.body)
-                """,
+              "ignored by fake interpreter",
               Duration.ofSeconds(30));
 
       assertEquals(
           ScriptStatus.SUCCEEDED,
           result.status(),
           result.errorMessage() + "\nSTDERR:\n" + result.stderr());
-      assertTrue(result.stdout().contains("202"));
-      assertTrue(result.stdout().contains("accepted"));
+      assertTrue(result.stdout().contains("statusCode=202"));
+      assertTrue(result.stdout().contains("body=accepted"));
     }
   }
 }

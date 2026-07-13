@@ -22,6 +22,7 @@ public final class ExtensionDataPaths {
     public Path root() { return root; }
     public Path runtimeRoot() { return root.resolve("runtime"); }
     public Path userPackages() { return root.resolve("packages/cpython-3.12-windows-x64"); }
+    public Path userPackages(String environmentKey) { return root.resolve("packages").resolve(environmentKey); }
     public Path packageStagingRoot() { return root.resolve("packages/staging"); }
     public Path packageRequests() { return root.resolve("packages/requests.properties"); }
     public Path packageSources() { return root.resolve("packages/sources"); }
@@ -29,6 +30,8 @@ public final class ExtensionDataPaths {
     public Path temp() { return root.resolve("temp"); }
     public Path logs() { return root.resolve("logs"); }
     public Path settings() { return root.resolve("settings"); }
+    public Path runtimeWorkRoot(String environmentKey) { return runtimeRoot().resolve("work").resolve(environmentKey); }
+    public Path runtimeAssetsRoot(String assetKey) { return runtimeRoot().resolve("assets").resolve(assetKey); }
 
     public boolean isOwned(Path candidate) {
         return candidate != null && candidate.toAbsolutePath().normalize().startsWith(root);
@@ -40,5 +43,13 @@ public final class ExtensionDataPaths {
             throw new IOException("Refusing path outside extension data root: " + candidate);
         }
         return normalized;
+    }
+
+    public Path requireOwnedUnchecked(Path candidate) {
+        try {
+            return requireOwned(candidate);
+        } catch (IOException e) {
+            throw new IllegalArgumentException(e.getMessage(), e);
+        }
     }
 }

@@ -21,20 +21,32 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
     private final Path workingDirectory;
     private final BurpBridge bridge;
     private final Path userPackages;
+    private final Path helperRoot;
+    private final InteractiveInputHandler inputHandler;
 
     public CPythonWorkerRuntime(CPythonWorkerCommand command, Path workingDirectory) {
-        this(command, workingDirectory, new BurpBridge(), workingDirectory.resolve("user-packages"));
+        this(command, workingDirectory, new BurpBridge(), workingDirectory.resolve("user-packages"),
+            workingDirectory.resolve("python-worker"), InteractiveInputHandler.disabled());
     }
 
     public CPythonWorkerRuntime(CPythonWorkerCommand command, Path workingDirectory, BurpBridge bridge) {
-        this(command, workingDirectory, bridge, workingDirectory.resolve("user-packages"));
+        this(command, workingDirectory, bridge, workingDirectory.resolve("user-packages"),
+            workingDirectory.resolve("python-worker"), InteractiveInputHandler.disabled());
     }
 
     public CPythonWorkerRuntime(CPythonWorkerCommand command, Path workingDirectory, BurpBridge bridge, Path userPackages) {
+        this(command, workingDirectory, bridge, userPackages, workingDirectory.resolve("python-worker"),
+            InteractiveInputHandler.disabled());
+    }
+
+    public CPythonWorkerRuntime(CPythonWorkerCommand command, Path workingDirectory, BurpBridge bridge,
+                                Path userPackages, Path helperRoot, InteractiveInputHandler inputHandler) {
         this.command = Objects.requireNonNull(command, "command");
         this.workingDirectory = Objects.requireNonNull(workingDirectory, "workingDirectory").toAbsolutePath().normalize();
         this.bridge = Objects.requireNonNull(bridge, "bridge");
         this.userPackages = Objects.requireNonNull(userPackages, "userPackages").toAbsolutePath().normalize();
+        this.helperRoot = Objects.requireNonNull(helperRoot, "helperRoot").toAbsolutePath().normalize();
+        this.inputHandler = Objects.requireNonNull(inputHandler, "inputHandler");
     }
 
     @Override
@@ -48,16 +60,62 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
         try {
             Files.createDirectories(workingDirectory);
             Files.createDirectories(userPackages);
+            Files.createDirectories(helperRoot);
             script = Files.createTempFile(workingDirectory, "burp-python-", ".py");
             Files.writeString(script, source);
             launcher = Files.createTempFile(workingDirectory, "burp-python-launcher-", ".py");
             Files.writeString(launcher, """
+                import builtins
                 import os
+                import pathlib
                 import runpy
                 import sys
+                import time
+                import uuid
+                helper_root = os.environ.get("BURP_PYTHON_HELPER_ROOT", "")
                 user_packages = os.environ.get("BURP_PYTHON_USER_PACKAGES", "")
-                if user_packages:
-                    sys.path.insert(0, user_packages)
+                for root in [user_packages, helper_root]:
+                    if root and root not in sys.path:
+                        sys.path.insert(0, root)
+                rpc_dir = os.environ.get("BURP_PYTHON_RPC_DIR", "")
+                def _rpc(fields):
+                    if not rpc_dir:
+                        raise RuntimeError("BURP_PYTHON_RPC_DIR is not configured")
+                    request_id = uuid.uuid4().hex
+                    root = pathlib.Path(rpc_dir)
+                    request = root / f"{request_id}.request"
+                    response = root / f"{request_id}.response"
+                    request.write_text(
+                        "\\n".join([*[f"{key}={value or ''}" for key, value in fields.items()], "__end=1", ""]),
+                        encoding="utf-8",
+                    )
+                    deadline = time.monotonic() + 3600
+                    while not response.exists():
+                        if time.monotonic() > deadline:
+                            raise TimeoutError(f"Timed out waiting for Burp RPC response: {fields.get('operation', '')}")
+                        time.sleep(0.025)
+                    payload = {}
+                    for line in response.read_text(encoding="utf-8-sig").splitlines():
+                        key, _, value = line.partition("=")
+                        payload[key] = value.replace("\\\\n", "\\n").replace("\\\\r", "\\r")
+                    return payload
+                def _burp_input(prompt=""):
+                    payload = _rpc({"operation": "stdin.read", "prompt": prompt or ""})
+                    if payload.get("ok") != "true":
+                        raise EOFError(payload.get("error", "Interactive input failed"))
+                    return payload.get("text", "")
+                class _BurpStdin:
+                    encoding = "utf-8"
+                    def readline(self, *args, **kwargs):
+                        return _burp_input() + "\\n"
+                    def read(self, *args, **kwargs):
+                        return _burp_input()
+                    def readable(self):
+                        return True
+                    def isatty(self):
+                        return False
+                builtins.input = _burp_input
+                sys.stdin = _BurpStdin()
                 runpy.run_path(sys.argv[1], run_name="__main__")
                 """, StandardCharsets.UTF_8);
             rpcDirectory = Files.createTempDirectory(workingDirectory, "rpc-");
@@ -66,10 +124,12 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
                 .directory(workingDirectory.toFile());
             builder.environment().put("BURP_PYTHON_RPC_DIR", rpcDirectory.toString());
             builder.environment().put("BURP_PYTHON_USER_PACKAGES", userPackages.toString());
+            builder.environment().put("BURP_PYTHON_HELPER_ROOT", helperRoot.toString());
             String existingPythonPath = builder.environment().getOrDefault("PYTHONPATH", "");
+            String computedPythonPath = userPackages + File.pathSeparator + helperRoot;
             builder.environment().put("PYTHONPATH", existingPythonPath.isBlank()
-                ? userPackages.toString()
-                : userPackages + File.pathSeparator + existingPythonPath);
+                ? computedPythonPath
+                : computedPythonPath + File.pathSeparator + existingPythonPath);
             Process process = builder.start();
 
             ByteArrayOutputStream stdout = new ByteArrayOutputStream();
@@ -173,6 +233,21 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
             response.put("ok", "true");
             response.put("statusCode", Integer.toString(result.statusCode()));
             response.put("body", result.body());
+            return response;
+        }
+        if ("stdin.read".equals(operation)) {
+            Map<String, String> response = new LinkedHashMap<>();
+            try {
+                response.put("ok", "true");
+                response.put("text", inputHandler.requestInput(fields.getOrDefault("prompt", "")));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                response.put("ok", "false");
+                response.put("error", "Interactive input interrupted");
+            } catch (IOException e) {
+                response.put("ok", "false");
+                response.put("error", e.getMessage() == null ? e.toString() : e.getMessage());
+            }
             return response;
         }
         Map<String, String> response = new LinkedHashMap<>();
