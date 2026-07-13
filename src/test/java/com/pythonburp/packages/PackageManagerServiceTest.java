@@ -44,6 +44,44 @@ final class PackageManagerServiceTest {
         assertTrue(new PackageRequestStore(paths.packageRequests()).load().isEmpty());
     }
 
+    @Test
+    void installExplainsWhenZenmapPythonLacksSsl() throws Exception {
+        ExtensionDataPaths paths = new ExtensionDataPaths(tempDir.resolve("data-no-ssl"));
+        EmbeddedPipRunner runner = new EmbeddedPipRunner() {
+            @Override
+            public PipRunResult run(List<String> command, java.util.function.Consumer<String> output) {
+                return new PipRunResult(
+                    2,
+                    false,
+                    "",
+                    "WARNING: Disabling truststore since ssl support is missing\n"
+                        + "ERROR: Can't connect to HTTPS URL because the SSL module is not available.\n"
+                );
+            }
+        };
+        PackageManagerService service = new PackageManagerService(
+            paths,
+            new RuntimeActivityCoordinator(),
+            new SharedPackageEnvironment(paths),
+            new PackageRequestStore(paths.packageRequests()),
+            new PackageSettingsStore(paths.settings().resolve("pip.properties")),
+            new PackageInventoryReader(new PackageCatalog(List.of())),
+            new ExtensionDataCleaner(paths),
+            runner,
+            paths.userPackages(),
+            new PackageCatalog(List.of()),
+            false,
+            true,
+            () -> tempDir.resolve("python.exe")
+        );
+
+        PackageOperationResult result = service.installRequirement("demo-package==1.2.3", ignored -> {});
+
+        assertFalse(result.succeeded());
+        assertTrue(result.message().contains("does not provide the ssl module"));
+        assertTrue(new PackageRequestStore(paths.packageRequests()).load().isEmpty());
+    }
+
     private PackageManagerService service(ExtensionDataPaths paths) {
         return service(paths, true);
     }

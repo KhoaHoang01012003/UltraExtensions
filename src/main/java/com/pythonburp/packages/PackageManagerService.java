@@ -18,6 +18,9 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 public final class PackageManagerService {
+    private static final String SSL_UNAVAILABLE_MESSAGE =
+        "Zenmap Python on this machine does not provide the ssl module, so remote package installs from HTTPS indexes like PyPI are unavailable. Use a local wheel, a local requirements file that points to local wheel files, or an interpreter build with ssl support.";
+
     private final ExtensionDataPaths paths;
     private final Path userPackages;
     private final PackageCatalog catalog;
@@ -189,7 +192,7 @@ public final class PackageManagerService {
                     };
                     try {
                         PipRunResult result = pipRunner.run(command, output);
-                        if (!result.succeeded()) throw new IOException("pip failed with exit code " + result.exitCode());
+                        if (!result.succeeded()) throw new IOException(describePipFailure(result));
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         throw new IOException("pip operation interrupted", e);
@@ -270,6 +273,17 @@ public final class PackageManagerService {
     private static String requirementId(String requirement) {
         String value = requirement.split("[<>=!~\\[]", 2)[0].trim();
         return PackageRequest.normalizeId(value);
+    }
+
+    private static String describePipFailure(PipRunResult result) {
+        String diagnostics = ((result.stderr() == null ? "" : result.stderr()) + "\n"
+            + (result.stdout() == null ? "" : result.stdout())).toLowerCase(Locale.ROOT);
+        if (diagnostics.contains("ssl module is not available")
+            || diagnostics.contains("ssl support is missing")
+            || diagnostics.contains("require tls/ssl")) {
+            return SSL_UNAVAILABLE_MESSAGE;
+        }
+        return "pip failed with exit code " + result.exitCode();
     }
 
     private PackageOperationResult success(String message) {
