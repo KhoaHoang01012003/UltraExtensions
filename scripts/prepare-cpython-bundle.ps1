@@ -8,6 +8,9 @@ param(
     [Parameter(Mandatory = $true)]
     [string] $DownloadDir,
 
+    [Parameter(Mandatory = $false)]
+    [string] $FallbackStdlibDir,
+
     [Parameter(Mandatory = $true)]
     [string] $Packages,
 
@@ -18,10 +21,18 @@ param(
 $ErrorActionPreference = "Stop"
 
 $runtimeDir = Join-Path $OutputDir "cpython\windows-x64"
+$defaultFallbackStdlibDir = "C:\Program Files (x86)\Nmap\zenmap\bin\Lib"
+$resolvedFallbackStdlibDir = $null
+if ($FallbackStdlibDir -and (Test-Path $FallbackStdlibDir)) {
+    $resolvedFallbackStdlibDir = (Resolve-Path $FallbackStdlibDir).Path
+} elseif (Test-Path $defaultFallbackStdlibDir) {
+    $resolvedFallbackStdlibDir = (Resolve-Path $defaultFallbackStdlibDir).Path
+}
 $manifest = Join-Path $runtimeDir "burp-python-runtime.txt"
 $expectedManifest = @(
     "python=$PythonVersion",
-    "packages=$Packages"
+    "packages=$Packages",
+    "fallbackStdlibDir=$resolvedFallbackStdlibDir"
 )
 $marker = Join-Path $runtimeDir ".burp-python-cpython-bundle-ready"
 if (Test-Path $marker) {
@@ -96,6 +107,19 @@ if ($packageList.Count -gt 0) {
 
 if (Test-Path $WorkerModulesDir) {
     Copy-Item -Path (Join-Path $WorkerModulesDir "*") -Destination $sitePackages -Recurse -Force
+}
+
+if ($resolvedFallbackStdlibDir) {
+    $stdlibSource = Join-Path $runtimeDir "stdlib-source"
+    if (Test-Path $stdlibSource) {
+        Remove-Item -LiteralPath $stdlibSource -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $stdlibSource -Force | Out-Null
+    Write-Host "Copying fallback stdlib source from $resolvedFallbackStdlibDir"
+    $null = robocopy $resolvedFallbackStdlibDir $stdlibSource /E /NFL /NDL /NJH /NJS /NP /XD "__pycache__" "site-packages" /XF "*.pyc" "*.pyo"
+    if ($LASTEXITCODE -ge 8) {
+        throw "robocopy fallback stdlib source failed with exit code $LASTEXITCODE"
+    }
 }
 
 Set-Content -Path $manifest -Encoding UTF8 -Value $expectedManifest

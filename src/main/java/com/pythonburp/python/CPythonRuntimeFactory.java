@@ -20,6 +20,8 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     public static final String HELPER_STAGE_ID = "python-worker-burp-rpc2";
     public static final String PIP_RESOURCE_ROOT = "/cpython/windows-x64/Lib/site-packages/pip";
     public static final String PIP_STAGE_ID = "python-worker-pip-bootstrap1";
+    public static final String STDLIB_SOURCE_RESOURCE_ROOT = "/cpython/windows-x64/stdlib-source";
+    public static final String STDLIB_STAGE_ID = "python-worker-stdlib-source3";
     private static final String PIP_BOOTSTRAP_SITE_CUSTOMIZE = """
         import os
         import sys
@@ -218,6 +220,10 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
             }
 
             Path stdlibFallbackRoot = stdlibRoot;
+            Path bundledStdlibRoot = stageBundledStdlibRoot(paths, environment.environmentKey());
+            if (bundledStdlibRoot != null) {
+                stdlibFallbackRoot = bundledStdlibRoot;
+            }
             Path pipBootstrapRoot = stageBundledPipRoot(paths, environment.environmentKey(), stdlibFallbackRoot);
             Map<String, String> probeEnvironment = stdlibFallbackRoot == null
                 ? Map.of("PYTHONPATH", pipBootstrapRoot.toString())
@@ -233,6 +239,18 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
         } catch (IOException e) {
             throw new IllegalStateException("Failed to probe Zenmap Python at " + runtimePaths.zenmapBin() + ": " + e.getMessage(), e);
         }
+    }
+
+    private static Path stageBundledStdlibRoot(ExtensionDataPaths paths, String environmentKey) throws IOException {
+        Path stageRoot = new ResourceDirectoryStager(
+            paths.runtimeAssetsRoot(environmentKey + "-bundled-stdlib"),
+            CPythonRuntimeFactory.class,
+            STDLIB_SOURCE_RESOURCE_ROOT,
+            "stdlib",
+            STDLIB_STAGE_ID
+        ).stage();
+        Path stdlibRoot = stageRoot.resolve("stdlib").normalize();
+        return Files.isDirectory(stdlibRoot) ? stdlibRoot : null;
     }
 
     private static Path stageBundledPipRoot(ExtensionDataPaths paths, String environmentKey, Path stdlibFallbackRoot) throws IOException {
