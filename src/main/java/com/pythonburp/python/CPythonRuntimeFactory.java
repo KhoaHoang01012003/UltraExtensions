@@ -250,7 +250,7 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
                 runtimePaths,
                 paths,
                 environment,
-                bundledPip.succeeded(),
+                true,
                 pipBootstrapRoot,
                 stdlibFallbackRoot,
                 compatNativeRoot,

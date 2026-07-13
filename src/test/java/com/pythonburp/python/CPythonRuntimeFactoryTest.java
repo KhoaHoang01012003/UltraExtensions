@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.pythonburp.storage.ExtensionDataPaths;
+import java.lang.reflect.Constructor;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.function.Supplier;
@@ -64,6 +65,34 @@ final class CPythonRuntimeFactoryTest {
   }
 
   @Test
+  void keepsBundledFallbackEnabledEvenWhenStartupProbeReportedWarning() throws Exception {
+    Path fakePython = Files.writeString(tempDir.resolve("python.exe"), "fake");
+    Path helperRoot = Files.createDirectories(tempDir.resolve("helper-root"));
+    Path pipRoot = Files.createDirectories(tempDir.resolve("pip-root"));
+    Path stdlibRoot = Files.createDirectories(tempDir.resolve("stdlib-root"));
+    Path compatRoot = Files.createDirectories(tempDir.resolve("compat-root"));
+    ExtensionDataPaths paths = new ExtensionDataPaths(tempDir.resolve("localappdata/BurpPythonIDE"));
+    PythonRuntimeEnvironment environment =
+        new PythonRuntimeEnvironment(fakePython, 3, 14, 0, "Windows", "AMD64", false);
+
+    CPythonRuntimeFactory factory = reflectiveFactory(
+        new NmapRuntimePaths(tempDir.resolve("Nmap/zenmap/bin")),
+        paths,
+        environment,
+        true,
+        pipRoot,
+        stdlibRoot,
+        compatRoot,
+        "Bundled pip startup probe failed: exit code 1",
+        () -> helperRoot
+    );
+
+    assertTrue(factory.pipAvailable());
+    assertTrue(factory.usingBundledPipFallback());
+    assertTrue(factory.pipProbeWarning().contains("Bundled pip startup probe failed"));
+  }
+
+  @Test
   void wrapsMissingZenmapPythonWithActionableMessageForPythonExecutable() {
     ExtensionDataPaths paths = new ExtensionDataPaths(tempDir.resolve("localappdata/BurpPythonIDE"));
     IllegalStateException error =
@@ -92,5 +121,42 @@ final class CPythonRuntimeFactoryTest {
 
   private Supplier<Path> tempHelperSupplier() {
     return () -> tempDir.resolve("helper-root");
+  }
+
+  @SuppressWarnings("unchecked")
+  private static CPythonRuntimeFactory reflectiveFactory(
+      NmapRuntimePaths runtimePaths,
+      ExtensionDataPaths paths,
+      PythonRuntimeEnvironment environment,
+      boolean pipAvailable,
+      Path pipBootstrapRoot,
+      Path stdlibFallbackRoot,
+      Path compatNativeRoot,
+      String pipProbeWarning,
+      Supplier<Path> helperRootSupplier) throws Exception {
+    Constructor<CPythonRuntimeFactory> constructor =
+        (Constructor<CPythonRuntimeFactory>) CPythonRuntimeFactory.class.getDeclaredConstructor(
+            NmapRuntimePaths.class,
+            ExtensionDataPaths.class,
+            PythonRuntimeEnvironment.class,
+            boolean.class,
+            Path.class,
+            Path.class,
+            Path.class,
+            String.class,
+            Supplier.class
+        );
+    constructor.setAccessible(true);
+    return constructor.newInstance(
+        runtimePaths,
+        paths,
+        environment,
+        pipAvailable,
+        pipBootstrapRoot,
+        stdlibFallbackRoot,
+        compatNativeRoot,
+        pipProbeWarning,
+        helperRootSupplier
+    );
   }
 }

@@ -92,6 +92,9 @@ public final class BurpPythonIdeExtension {
                 api.logging().logToOutput(runtimeFactory.pipProbeWarning());
             }
         } else if (!runtimeFactory.pipAvailable()) {
+            if (runtimeFactory.pipProbeWarning() != null && !runtimeFactory.pipProbeWarning().isBlank()) {
+                api.logging().logToError(runtimeFactory.pipProbeWarning());
+            }
             api.logging().logToError(packageService.pipUnavailableMessage());
         }
         api.logging().logToOutput(VersionInfo.EXTENSION_NAME + " " + VersionInfo.EXTENSION_VERSION + " loaded");
