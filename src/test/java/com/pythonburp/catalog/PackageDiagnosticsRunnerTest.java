@@ -38,7 +38,8 @@ final class PackageDiagnosticsRunnerTest {
         }
 
         @Override
-        public ScriptRunResult execute(String source, Duration timeout) {
+        public ScriptRunResult execute(com.pythonburp.python.ScriptRunRequest request) {
+            String source = request.source();
             if (source.equals(failingSource)) {
                 return ScriptRunResult.failed("", "stderr: " + source, "boom: " + source);
             }

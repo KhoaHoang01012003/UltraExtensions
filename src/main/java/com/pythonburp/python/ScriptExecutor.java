@@ -29,7 +29,7 @@ public final class ScriptExecutor {
         try {
             return executors.submitScript(() -> {
                 try (lease; PythonRuntime runtime = runtimeFactory.get()) {
-                    return runtime.execute(request.source(), request.timeout());
+                    return runtime.execute(request);
                 }
             });
         } catch (RuntimeException e) {

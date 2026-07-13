@@ -10,6 +10,7 @@ import com.pythonburp.console.ConsoleEvent;
 import com.pythonburp.console.ConsoleEventType;
 import com.pythonburp.python.CPythonRuntimeFactory;
 import com.pythonburp.python.ScriptExecutor;
+import com.pythonburp.python.ScriptExecutionMode;
 import com.pythonburp.python.ScriptRunRequest;
 import com.pythonburp.python.ScriptRunResult;
 import com.pythonburp.python.ScriptStatus;
@@ -23,15 +24,19 @@ import com.pythonburp.storage.ExtensionDataCleaner;
 import com.pythonburp.storage.ExtensionDataPaths;
 
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JFileChooser;
+import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
+import javax.swing.JTextField;
 import javax.swing.JToggleButton;
 import javax.swing.JToolBar;
 import javax.swing.SwingUtilities;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.BorderLayout;
+import java.awt.FlowLayout;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -46,6 +51,9 @@ public final class BurpPythonIdeTab extends JPanel {
     private final ScriptExecutor scriptExecutor;
     private final IdeExecutors executors;
     private final BurpBridge bridge;
+    private final JComboBox<ScriptExecutionMode> executionMode = new JComboBox<>(ScriptExecutionMode.values());
+    private final JTextField customCommand = new JTextField(28);
+    private final JLabel customCommandLabel = new JLabel("Python Args");
     private final JToggleButton interactiveMode = new JToggleButton("Interactive");
     private volatile boolean interactiveEnabled;
     private Future<ScriptRunResult> activeRun;
@@ -71,11 +79,14 @@ public final class BurpPythonIdeTab extends JPanel {
         JButton run = new JButton("Run");
         JButton stop = new JButton("Stop");
         JButton clearLog = new JButton("Clear Log");
+        JButton help = new JButton("Help");
         load.addActionListener(event -> loadScript());
         saveAs.addActionListener(event -> saveScriptAs());
         run.addActionListener(event -> runScript());
         stop.addActionListener(event -> stopScript());
         clearLog.addActionListener(event -> console.clear());
+        help.addActionListener(event -> HelpDialogs.showPythonIdeHelp(this));
+        executionMode.addActionListener(event -> updateExecutionModeUi());
         interactiveMode.addActionListener(event -> {
             interactiveEnabled = interactiveMode.isSelected();
             console.appendSystem("Interactive mode " + (interactiveEnabled ? "enabled" : "disabled"));
@@ -90,14 +101,23 @@ public final class BurpPythonIdeTab extends JPanel {
         toolbar.add(stop);
         toolbar.addSeparator();
         toolbar.add(interactiveMode);
-        toolbar.addSeparator();
         toolbar.add(clearLog);
+        toolbar.add(help);
+
+        JPanel modeBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        modeBar.add(new JLabel("Mode"));
+        modeBar.add(executionMode);
+        modeBar.add(customCommandLabel);
+        modeBar.add(customCommand);
+        JPanel header = new JPanel(new BorderLayout());
+        header.add(toolbar, BorderLayout.NORTH);
+        header.add(modeBar, BorderLayout.SOUTH);
 
         JSplitPane main = new JSplitPane(JSplitPane.VERTICAL_SPLIT, editor, console);
         main.setResizeWeight(0.7);
 
         JPanel editorWorkspace = new JPanel(new BorderLayout());
-        editorWorkspace.add(toolbar, BorderLayout.NORTH);
+        editorWorkspace.add(header, BorderLayout.NORTH);
         editorWorkspace.add(main, BorderLayout.CENTER);
         editorWorkspace.add(statusBar, BorderLayout.SOUTH);
 
@@ -109,6 +129,7 @@ public final class BurpPythonIdeTab extends JPanel {
         workspaces.addTab("Editor", editorWorkspace);
         workspaces.addTab("Package Manager", packagePanel);
         add(workspaces, BorderLayout.CENTER);
+        updateExecutionModeUi();
         SwingUtilities.invokeLater(packageController::refresh);
     }
 
@@ -185,11 +206,21 @@ public final class BurpPythonIdeTab extends JPanel {
             statusBar.setStatus("Already running");
             return;
         }
+        ScriptRunRequest request;
+        try {
+            request = currentRequest();
+        } catch (IllegalArgumentException e) {
+            statusBar.setStatus("Invalid command");
+            console.append(List.of(ConsoleEvent.now(ConsoleEventType.STDERR, e.getMessage())));
+            return;
+        }
         statusBar.setStatus("Running");
-        console.appendSystem("Running script");
+        console.appendSystem(request.mode() == ScriptExecutionMode.CUSTOM_COMMAND
+            ? "Running custom command: python.exe " + request.commandTail()
+            : "Running editor script");
         Future<ScriptRunResult> run;
         try {
-            run = scriptExecutor.run(new ScriptRunRequest(editor.source(), Duration.ofMinutes(5)));
+            run = scriptExecutor.run(request);
         } catch (IllegalStateException e) {
             statusBar.setStatus("Package operation active");
             console.append(List.of(ConsoleEvent.now(ConsoleEventType.STDERR, e.getMessage())));
@@ -224,6 +255,25 @@ public final class BurpPythonIdeTab extends JPanel {
             throw new IOException("Script requested interactive input. Enable Interactive mode and run again.");
         }
         return console.requestInput(prompt);
+    }
+
+    private void updateExecutionModeUi() {
+        boolean custom = executionMode.getSelectedItem() == ScriptExecutionMode.CUSTOM_COMMAND;
+        customCommand.setEnabled(custom);
+        customCommandLabel.setEnabled(custom);
+        editor.setEditorEnabled(!custom);
+    }
+
+    private ScriptRunRequest currentRequest() {
+        ScriptExecutionMode mode = (ScriptExecutionMode) executionMode.getSelectedItem();
+        if (mode == ScriptExecutionMode.CUSTOM_COMMAND) {
+            String tail = customCommand.getText();
+            if (tail == null || tail.isBlank()) {
+                throw new IllegalArgumentException("Enter the command tail after python.exe, for example: -m abc -h xyz");
+            }
+            return ScriptRunRequest.customCommand(tail, Duration.ofMinutes(5));
+        }
+        return ScriptRunRequest.editorScript(editor.source(), Duration.ofMinutes(5));
     }
 
     private void publishFailure(Future<ScriptRunResult> run, Exception e) {

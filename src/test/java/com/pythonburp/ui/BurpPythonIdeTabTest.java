@@ -18,8 +18,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import javax.swing.AbstractButton;
+import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JTabbedPane;
+import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import java.awt.Component;
 import java.awt.Container;
@@ -41,6 +43,7 @@ final class BurpPythonIdeTabTest {
         AtomicBoolean hasLoad = new AtomicBoolean(false);
         AtomicBoolean hasSaveAs = new AtomicBoolean(false);
         AtomicBoolean hasClearLog = new AtomicBoolean(false);
+        AtomicBoolean hasHelp = new AtomicBoolean(false);
 
         onEdt(() -> {
             BurpPythonIdeTab tab = newTab().orElseThrow();
@@ -48,11 +51,13 @@ final class BurpPythonIdeTabTest {
             hasLoad.set(labels.contains("Load"));
             hasSaveAs.set(labels.contains("Save As"));
             hasClearLog.set(labels.contains("Clear Log"));
+            hasHelp.set(labels.contains("Help"));
         });
 
         assertTrue(hasLoad.get());
         assertTrue(hasSaveAs.get());
         assertTrue(hasClearLog.get());
+        assertTrue(hasHelp.get());
     }
 
     @Test
@@ -67,6 +72,21 @@ final class BurpPythonIdeTabTest {
         });
 
         assertTrue(hasWorkspaces.get());
+    }
+
+    @Test
+    void exposesCustomCommandControls() throws Exception {
+        AtomicBoolean hasModeSelector = new AtomicBoolean(false);
+        AtomicBoolean hasCommandField = new AtomicBoolean(false);
+
+        onEdt(() -> {
+            BurpPythonIdeTab tab = newTab().orElseThrow();
+            hasModeSelector.set(containsComponentType(tab, JComboBox.class));
+            hasCommandField.set(containsComponentType(tab, JTextField.class));
+        });
+
+        assertTrue(hasModeSelector.get());
+        assertTrue(hasCommandField.get());
     }
 
     private java.util.Optional<BurpPythonIdeTab> newTab() {

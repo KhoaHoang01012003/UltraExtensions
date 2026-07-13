@@ -34,4 +34,11 @@ public record CPythonWorkerCommand(List<String> commandPrefix) {
         command.add(script.toString());
         return List.copyOf(command);
     }
+
+    List<String> commandForArguments(List<String> arguments) {
+        Objects.requireNonNull(arguments, "arguments");
+        List<String> command = new ArrayList<>(commandPrefix);
+        command.addAll(arguments);
+        return List.copyOf(command);
+    }
 }

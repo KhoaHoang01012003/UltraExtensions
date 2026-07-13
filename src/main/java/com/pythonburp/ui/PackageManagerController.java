@@ -56,6 +56,7 @@ public final class PackageManagerController {
         panel.installRequirements.addActionListener(event -> chooseAndInstall("Requirements files (*.txt)", "txt",
             path -> service.installRequirements(path, this::publishOutput)));
         panel.refresh.addActionListener(event -> refresh());
+        panel.help.addActionListener(event -> HelpDialogs.showPythonIdeHelp(panel));
         panel.uninstall.addActionListener(event -> {
             String name = panel.selectedPackage();
             if (!name.isBlank()) submit("Uninstalling " + name, () -> service.uninstall(name, this::publishOutput));

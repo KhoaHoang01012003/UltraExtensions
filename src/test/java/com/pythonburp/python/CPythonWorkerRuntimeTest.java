@@ -74,6 +74,26 @@ final class CPythonWorkerRuntimeTest {
         assertTrue(result.stdout().contains(userPackages.toAbsolutePath().normalize().toString()));
     }
 
+    @Test
+    void customCommandModePassesRawArgumentsAfterPythonExecutable() throws Exception {
+        Path fake = tempDir.resolve("custom-command.ps1");
+        Files.writeString(fake, """
+            Write-Output ($args -join "|")
+            exit 0
+            """);
+        CPythonWorkerRuntime runtime = new CPythonWorkerRuntime(
+            new CPythonWorkerCommand(List.of(
+                "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", fake.toString()
+            )),
+            tempDir.resolve("custom-work")
+        );
+
+        ScriptRunResult result = runtime.execute(ScriptRunRequest.customCommand("-m abc -h xyz", Duration.ofSeconds(5)));
+
+        assertEquals(ScriptStatus.SUCCEEDED, result.status(), result.errorMessage());
+        assertTrue(result.stdout().contains("-m|abc|-h|xyz"), result.stdout());
+    }
+
     private CPythonWorkerRuntime runtimeWithFakeInterpreter(String body) throws Exception {
         Path fake = tempDir.resolve("fake-python.ps1");
         Files.writeString(fake, """

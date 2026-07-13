@@ -24,6 +24,7 @@ public final class PackageManagerPanel extends JPanel {
     final JButton installRequirements = new JButton("Install Requirements");
     final JButton refresh = new JButton("Refresh");
     final JButton settings = new JButton("Settings");
+    final JButton help = new JButton("Help");
     final JButton uninstall = new JButton("Uninstall Selected");
     final JButton clearPackages = new JButton("Clear User Packages");
     final JButton clearPipCache = new JButton("Clear pip Cache");
@@ -48,6 +49,7 @@ public final class PackageManagerPanel extends JPanel {
         actions.add(installRequirements);
         actions.add(refresh);
         actions.add(settings);
+        actions.add(help);
         actions.add(uninstall);
 
         JPanel header = new JPanel(new GridLayout(0, 1, 0, 6));
@@ -80,7 +82,7 @@ public final class PackageManagerPanel extends JPanel {
 
     void setBusy(boolean busy, String text) {
         for (JButton button : List.of(install, installWheel, installRequirements, refresh, settings,
-            uninstall, clearPackages, clearPipCache, resetAll)) button.setEnabled(!busy);
+            help, uninstall, clearPackages, clearPipCache, resetAll)) button.setEnabled(!busy);
         status.setText(text);
     }
 

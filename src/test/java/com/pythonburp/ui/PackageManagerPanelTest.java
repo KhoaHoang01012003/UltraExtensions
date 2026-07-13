@@ -19,7 +19,7 @@ final class PackageManagerPanelTest {
         SwingUtilities.invokeAndWait(() -> labels.set(buttonLabels(new PackageManagerPanel())));
 
         assertTrue(labels.get().containsAll(List.of(
-            "Install", "Install Wheel", "Install Requirements", "Refresh", "Settings",
+            "Install", "Install Wheel", "Install Requirements", "Refresh", "Settings", "Help",
             "Clear User Packages", "Clear pip Cache", "Reset All Extension Data"
         )));
     }

@@ -44,6 +44,11 @@ public final class EditorPanel extends JPanel {
         focusEditor();
     }
 
+    public void setEditorEnabled(boolean enabled) {
+        editor.setEditable(enabled);
+        editor.setEnabled(enabled);
+    }
+
     public boolean isEditorReadyForInput() {
         return editor.isEditable() && editor.isEnabled() && editor.isFocusable() && editor.isRequestFocusEnabled();
     }

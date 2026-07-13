@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -17,6 +18,64 @@ import java.util.Comparator;
 import java.util.concurrent.TimeUnit;
 
 public final class CPythonWorkerRuntime implements PythonRuntime {
+    private static final String SITE_CUSTOMIZE = """
+        import builtins
+        import os
+        import pathlib
+        import sys
+        import time
+        import uuid
+
+        rpc_dir = os.environ.get("BURP_PYTHON_RPC_DIR", "")
+
+        def _rpc(fields):
+            if not rpc_dir:
+                raise RuntimeError("BURP_PYTHON_RPC_DIR is not configured")
+            request_id = uuid.uuid4().hex
+            root = pathlib.Path(rpc_dir)
+            request = root / f"{request_id}.request"
+            response = root / f"{request_id}.response"
+            request.write_text(
+                "\\n".join([*[f"{key}={value or ''}" for key, value in fields.items()], "__end=1", ""]),
+                encoding="utf-8",
+            )
+            deadline = time.monotonic() + 3600
+            while not response.exists():
+                if time.monotonic() > deadline:
+                    raise TimeoutError(f"Timed out waiting for Burp RPC response: {fields.get('operation', '')}")
+                time.sleep(0.025)
+            payload = {}
+            for line in response.read_text(encoding="utf-8-sig").splitlines():
+                key, _, value = line.partition("=")
+                payload[key] = value.replace("\\\\n", "\\n").replace("\\\\r", "\\r")
+            return payload
+
+        def _burp_input(prompt=""):
+            payload = _rpc({"operation": "stdin.read", "prompt": prompt or ""})
+            if payload.get("ok") != "true":
+                raise EOFError(payload.get("error", "Interactive input failed"))
+            return payload.get("text", "")
+
+        class _BurpStdin:
+            encoding = "utf-8"
+
+            def readline(self, *args, **kwargs):
+                return _burp_input() + "\\n"
+
+            def read(self, *args, **kwargs):
+                return _burp_input()
+
+            def readable(self):
+                return True
+
+            def isatty(self):
+                return False
+
+        if rpc_dir:
+            builtins.input = _burp_input
+            sys.stdin = _BurpStdin()
+        """;
+
     private final CPythonWorkerCommand command;
     private final Path workingDirectory;
     private final BurpBridge bridge;
@@ -50,9 +109,8 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
     }
 
     @Override
-    public ScriptRunResult execute(String source, Duration timeout) {
-        Objects.requireNonNull(source, "source");
-        Objects.requireNonNull(timeout, "timeout");
+    public ScriptRunResult execute(ScriptRunRequest request) {
+        Objects.requireNonNull(request, "request");
 
         Path script = null;
         Path launcher = null;
@@ -61,66 +119,13 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
             Files.createDirectories(workingDirectory);
             Files.createDirectories(userPackages);
             Files.createDirectories(helperRoot);
-            script = Files.createTempFile(workingDirectory, "burp-python-", ".py");
-            Files.writeString(script, source);
-            launcher = Files.createTempFile(workingDirectory, "burp-python-launcher-", ".py");
-            Files.writeString(launcher, """
-                import builtins
-                import os
-                import pathlib
-                import runpy
-                import sys
-                import time
-                import uuid
-                helper_root = os.environ.get("BURP_PYTHON_HELPER_ROOT", "")
-                user_packages = os.environ.get("BURP_PYTHON_USER_PACKAGES", "")
-                for root in [user_packages, helper_root]:
-                    if root and root not in sys.path:
-                        sys.path.insert(0, root)
-                rpc_dir = os.environ.get("BURP_PYTHON_RPC_DIR", "")
-                def _rpc(fields):
-                    if not rpc_dir:
-                        raise RuntimeError("BURP_PYTHON_RPC_DIR is not configured")
-                    request_id = uuid.uuid4().hex
-                    root = pathlib.Path(rpc_dir)
-                    request = root / f"{request_id}.request"
-                    response = root / f"{request_id}.response"
-                    request.write_text(
-                        "\\n".join([*[f"{key}={value or ''}" for key, value in fields.items()], "__end=1", ""]),
-                        encoding="utf-8",
-                    )
-                    deadline = time.monotonic() + 3600
-                    while not response.exists():
-                        if time.monotonic() > deadline:
-                            raise TimeoutError(f"Timed out waiting for Burp RPC response: {fields.get('operation', '')}")
-                        time.sleep(0.025)
-                    payload = {}
-                    for line in response.read_text(encoding="utf-8-sig").splitlines():
-                        key, _, value = line.partition("=")
-                        payload[key] = value.replace("\\\\n", "\\n").replace("\\\\r", "\\r")
-                    return payload
-                def _burp_input(prompt=""):
-                    payload = _rpc({"operation": "stdin.read", "prompt": prompt or ""})
-                    if payload.get("ok") != "true":
-                        raise EOFError(payload.get("error", "Interactive input failed"))
-                    return payload.get("text", "")
-                class _BurpStdin:
-                    encoding = "utf-8"
-                    def readline(self, *args, **kwargs):
-                        return _burp_input() + "\\n"
-                    def read(self, *args, **kwargs):
-                        return _burp_input()
-                    def readable(self):
-                        return True
-                    def isatty(self):
-                        return False
-                builtins.input = _burp_input
-                sys.stdin = _BurpStdin()
-                runpy.run_path(sys.argv[1], run_name="__main__")
-                """, StandardCharsets.UTF_8);
+            writeSiteCustomize();
             rpcDirectory = Files.createTempDirectory(workingDirectory, "rpc-");
 
-            ProcessBuilder builder = new ProcessBuilder(command.commandFor(launcher, script))
+            InvocationPlan invocation = buildInvocation(request);
+            script = invocation.script();
+            launcher = invocation.launcher();
+            ProcessBuilder builder = new ProcessBuilder(invocation.command())
                 .directory(workingDirectory.toFile());
             builder.environment().put("BURP_PYTHON_RPC_DIR", rpcDirectory.toString());
             builder.environment().put("BURP_PYTHON_USER_PACKAGES", userPackages.toString());
@@ -136,12 +141,12 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
             ByteArrayOutputStream stderr = new ByteArrayOutputStream();
             Thread stdoutReader = reader(process.getInputStream(), stdout, "burp-python-cpython-stdout");
             Thread stderrReader = reader(process.getErrorStream(), stderr, "burp-python-cpython-stderr");
-            boolean finished = waitFor(process, timeout, rpcDirectory);
+            boolean finished = waitFor(process, request.timeout(), rpcDirectory);
             if (!finished) {
                 terminate(process);
                 join(stdoutReader);
                 join(stderrReader);
-                return ScriptRunResult.failed(text(stdout), text(stderr), "Script timed out after " + timeout);
+                return ScriptRunResult.failed(text(stdout), text(stderr), "Script timed out after " + request.timeout());
             }
 
             join(stdoutReader);
@@ -177,6 +182,30 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
                 }
             }
         }
+    }
+
+    private InvocationPlan buildInvocation(ScriptRunRequest request) throws IOException {
+        if (request.mode() == ScriptExecutionMode.CUSTOM_COMMAND) {
+            return new InvocationPlan(
+                command.commandForArguments(PythonCommandLineParser.parseTail(request.commandTail())),
+                null,
+                null
+            );
+        }
+
+        Path script = Files.createTempFile(workingDirectory, "burp-python-", ".py");
+        Files.writeString(script, request.source());
+        Path launcher = Files.createTempFile(workingDirectory, "burp-python-launcher-", ".py");
+        Files.writeString(launcher, """
+            import runpy
+            import sys
+            runpy.run_path(sys.argv[1], run_name="__main__")
+            """, StandardCharsets.UTF_8);
+        return new InvocationPlan(command.commandFor(launcher, script), script, launcher);
+    }
+
+    private void writeSiteCustomize() throws IOException {
+        Files.writeString(helperRoot.resolve("sitecustomize.py"), SITE_CUSTOMIZE, StandardCharsets.UTF_8);
     }
 
     @Override
@@ -326,5 +355,8 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
         try (var entries = Files.walk(root)) {
             for (Path path : entries.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(path);
         }
+    }
+
+    private record InvocationPlan(List<String> command, Path script, Path launcher) {
     }
 }
