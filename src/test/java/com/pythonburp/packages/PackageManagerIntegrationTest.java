@@ -4,13 +4,11 @@ import com.pythonburp.bridge.BurpBridge;
 import com.pythonburp.catalog.PackageCatalog;
 import com.pythonburp.concurrency.RuntimeActivityCoordinator;
 import com.pythonburp.python.CPythonRuntimeFactory;
-import com.pythonburp.python.PythonRuntimeEnvironment;
 import com.pythonburp.python.PythonRuntime;
 import com.pythonburp.python.ScriptRunResult;
 import com.pythonburp.python.ScriptStatus;
 import com.pythonburp.storage.ExtensionDataCleaner;
 import com.pythonburp.storage.ExtensionDataPaths;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -34,21 +32,16 @@ final class PackageManagerIntegrationTest {
     @Test
     void installsLocalWheelAndImportsItFromNewWorker() throws Exception {
         ExtensionDataPaths paths = new ExtensionDataPaths(tempDir.resolve("data"));
-        Path python = testInterpreter();
-        Assumptions.assumeTrue(python != null, "No test interpreter configured for package integration test");
-        Path helperRoot = Files.createDirectories(tempDir.resolve("helper-root"));
-        CPythonRuntimeFactory runtimeFactory = new CPythonRuntimeFactory(
-            new PythonRuntimeEnvironment(python, 3, 14, 0, "Windows", "AMD64", true),
-            paths,
-            () -> helperRoot
-        );
+        Path zenmapBin = testZenmapBin();
+        CPythonRuntimeFactory runtimeFactory = new CPythonRuntimeFactory(zenmapBin, paths);
         RuntimeActivityCoordinator coordinator = new RuntimeActivityCoordinator();
         PackageManagerService service = new PackageManagerService(
             paths, coordinator, new SharedPackageEnvironment(paths, runtimeFactory.userPackages()),
             new PackageRequestStore(paths.packageRequests()),
             new PackageSettingsStore(paths.settings().resolve("pip.properties")),
             new PackageInventoryReader(new PackageCatalog(List.of())),
-            new ExtensionDataCleaner(paths, runtimeFactory.userPackages()), new EmbeddedPipRunner(),
+            new ExtensionDataCleaner(paths, runtimeFactory.userPackages()),
+            new EmbeddedPipRunner(runtimeFactory::pipEnvironmentOverrides),
             runtimeFactory.userPackages(), new PackageCatalog(List.of()), false, true, runtimeFactory::pythonExecutable
         );
         Path wheel = createWheel(tempDir.resolve("demo_package-1.0.0-py3-none-any.whl"));
@@ -85,15 +78,11 @@ final class PackageManagerIntegrationTest {
         zip.closeEntry();
     }
 
-    private static Path testInterpreter() {
-        String override = System.getenv("BURP_PYTHON_TEST_INTERPRETER");
-        if (override != null && !override.isBlank()) {
-            Path candidate = Path.of(override).toAbsolutePath().normalize();
-            if (Files.isRegularFile(candidate)) {
-                return candidate;
-            }
+    private static Path testZenmapBin() {
+        Path zenmapBin = Path.of(System.getProperty("burpPythonTestZenmapBin")).toAbsolutePath().normalize();
+        if (!Files.isRegularFile(zenmapBin.resolve("python.exe"))) {
+            throw new IllegalStateException("Missing test Zenmap Python at " + zenmapBin);
         }
-        Path zenmapPython = Path.of("C:", "Program Files (x86)", "Nmap", "zenmap", "bin", "python.exe");
-        return Files.isRegularFile(zenmapPython) ? zenmapPython : null;
+        return zenmapBin;
     }
 }

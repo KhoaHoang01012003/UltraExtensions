@@ -7,6 +7,8 @@ version = "0.3.0"
 
 ext {
     cpythonVersion = "3.12.10"
+    compatPythonVersion = "3.14.3"
+    compatPythonArchiveSha256 = "AD4961A479DEDBEB7C7D113253F8DB1B1935586B73C27488712BEEC4F2C894E6"
     cpythonPopularPackages = [
         "requests",
         "httpx",
@@ -75,19 +77,21 @@ sourceSets {
 }
 
 tasks.register("prepareCpythonBundle", Exec) {
-    description = "Downloads CPython embeddable runtime and installs the bundled package profile."
+    description = "Builds bundled pip assets and the exact CPython 3.14.3 compatibility runtime."
     group = "build"
     def outputDir = layout.buildDirectory.dir("generated/cpython-runtime")
     def downloadDir = layout.buildDirectory.dir("downloads/cpython")
+    def compatArchive = layout.buildDirectory.file("downloads/cpython/python-${compatPythonVersion}-embed-amd64.zip")
     def packages = cpythonPopularPackages.join(",")
-    def fallbackStdlibDir = project.findProperty("zenmapStdlibDir") ?: "C:\\Program Files (x86)\\Nmap\\zenmap\\bin\\Lib"
-    def compatPythonRoot = project.findProperty("pythonCompatRoot") ?: "C:\\Program"
 
     inputs.property("cpythonVersion", cpythonVersion)
+    inputs.property("compatPythonVersion", compatPythonVersion)
+    inputs.property("compatPythonArchiveSha256", compatPythonArchiveSha256)
     inputs.property("packages", packages)
     inputs.file("scripts/prepare-cpython-bundle.ps1")
     inputs.dir("src/main/python-worker")
     outputs.dir(outputDir.map { it.dir("cpython/windows-x64") })
+    outputs.file(compatArchive)
 
     commandLine(
         "powershell.exe",
@@ -98,19 +102,42 @@ tasks.register("prepareCpythonBundle", Exec) {
         file("scripts/prepare-cpython-bundle.ps1").absolutePath,
         "-PythonVersion",
         cpythonVersion,
+        "-CompatPythonVersion",
+        compatPythonVersion,
+        "-CompatArchiveSha256",
+        compatPythonArchiveSha256,
         "-OutputDir",
         outputDir.get().asFile.absolutePath,
         "-DownloadDir",
         downloadDir.get().asFile.absolutePath,
-        "-FallbackStdlibDir",
-        fallbackStdlibDir,
-        "-CompatPythonRoot",
-        compatPythonRoot,
         "-Packages",
         packages,
         "-WorkerModulesDir",
         file("src/main/python-worker").absolutePath
     )
+}
+
+def strippedPythonTestBin = layout.buildDirectory.dir("test-runtimes/python-${compatPythonVersion}-stripped")
+def compatPythonArchive = layout.buildDirectory.file("downloads/cpython/python-${compatPythonVersion}-embed-amd64.zip")
+
+tasks.register("preparePythonCompatibilityTestRuntime", Sync) {
+    description = "Creates a stripped Python 3.14.3 directory for compatibility smoke tests."
+    group = "verification"
+    dependsOn tasks.named("prepareCpythonBundle")
+    from({ zipTree(compatPythonArchive.get().asFile) }) {
+        include "python.exe"
+        include "python3.dll"
+        include "python314.dll"
+        include "python314.zip"
+        include "vcruntime140.dll"
+        include "vcruntime140_1.dll"
+    }
+    into strippedPythonTestBin
+}
+
+tasks.named("test") {
+    dependsOn tasks.named("preparePythonCompatibilityTestRuntime")
+    systemProperty "burpPythonTestZenmapBin", strippedPythonTestBin.get().asFile.absolutePath
 }
 
 tasks.named("processResources") {
@@ -124,6 +151,8 @@ tasks.register("packageSmokeTest", Test) {
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
     include "**/PackageSmokeTest.class"
+    dependsOn tasks.named("preparePythonCompatibilityTestRuntime")
+    systemProperty "burpPythonTestZenmapBin", strippedPythonTestBin.get().asFile.absolutePath
     shouldRunAfter test
 }
 
@@ -156,9 +185,10 @@ tasks.register("fatJar", Jar) {
 tasks.register("fatJarIsolatedSmoke", JavaExec) {
     description = "Loads the fat JAR through an isolated classloader and runs a CPython worker smoke script."
     group = "verification"
-    dependsOn tasks.named("fatJar"), tasks.named("compileTestJava")
+    dependsOn tasks.named("fatJar"), tasks.named("compileTestJava"), tasks.named("preparePythonCompatibilityTestRuntime")
     classpath = sourceSets.test.output.classesDirs
     mainClass = "com.pythonburp.fatjar.IsolatedFatJarSmoke"
+    systemProperty "burpPythonTestZenmapBin", strippedPythonTestBin.get().asFile.absolutePath
     shouldRunAfter tasks.named("packageSmokeTest")
     doFirst {
         args = [tasks.named("fatJar").get().archiveFile.get().asFile.absolutePath]

@@ -6,6 +6,7 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.jar.JarFile;
 
 public final class IsolatedFatJarSmoke {
     private IsolatedFatJarSmoke() {
@@ -18,9 +19,21 @@ public final class IsolatedFatJarSmoke {
 
         Path jar = Path.of(args[0]).toAbsolutePath().normalize();
         Path tempRoot = Files.createTempDirectory("burp-python-fatjar-smoke");
-        Path nmapBin = Path.of("C:", "Program Files (x86)", "Nmap", "zenmap", "bin");
+        Path nmapBin = Path.of(System.getProperty("burpPythonTestZenmapBin")).toAbsolutePath().normalize();
         if (!Files.isRegularFile(nmapBin.resolve("python.exe"))) {
             throw new IllegalStateException("Zenmap Python is required at " + nmapBin + " for the isolated fat JAR smoke test.");
+        }
+        try (JarFile jarFile = new JarFile(jar.toFile())) {
+            requireEntry(jarFile, "cpython/windows-x64/python-compat-3.14.3/python314.zip");
+            requireEntry(jarFile, "cpython/windows-x64/python-compat-3.14.3/_socket.pyd");
+            requireEntry(jarFile, "cpython/windows-x64/python-compat-3.14.3/_ssl.pyd");
+            requireEntry(jarFile, "cpython/windows-x64/python-compat-3.14.3/unicodedata.pyd");
+            if (jarFile.getEntry("cpython/windows-x64/python-compat-3.14.3/python.exe") != null) {
+                throw new AssertionError("Compatibility runtime must not bundle an AppData python.exe");
+            }
+            rejectEntry(jarFile, "cpython/windows-x64/python.exe");
+            rejectEntry(jarFile, "cpython/windows-x64/pythonw.exe");
+            rejectEntry(jarFile, "cpython/windows-x64/python312.dll");
         }
         Path extensionRoot = tempRoot.resolve("localappdata/BurpPythonIDE");
         try (URLClassLoader loader = new URLClassLoader(
@@ -43,12 +56,15 @@ public final class IsolatedFatJarSmoke {
 
                 Object result = execute.invoke(
                     runtime,
-                    "import colorsys, logging.handlers, ssl\n"
+                    "import _socket, colorsys, logging.handlers, ssl, sys, unicodedata, urllib.request\n"
                         + "from burp import crypto\n"
+                        + "print(sys.executable)\n"
                         + "print(colorsys.__name__)\n"
                         + "print(ssl.OPENSSL_VERSION)\n"
-                        + "print(crypto.sha256_hex(b'abc'))",
-                    Duration.ofSeconds(30)
+                        + "print(crypto.sha256_hex(b'abc'))\n"
+                        + "with urllib.request.urlopen('https://pypi.org/simple/pip/', timeout=20) as response:\n"
+                        + "    print(response.status)",
+                    Duration.ofSeconds(60)
                 );
                 Object status = result.getClass().getMethod("status").invoke(result);
                 Object stdout = result.getClass().getMethod("stdout").invoke(result);
@@ -56,14 +72,28 @@ public final class IsolatedFatJarSmoke {
                 if (!"SUCCEEDED".equals(status.toString())) {
                     throw new AssertionError("Fat JAR smoke failed: " + error);
                 }
-                if (!stdout.toString().contains("colorsys")
+                if (!stdout.toString().contains(nmapBin.resolve("python.exe").toString())
+                    || !stdout.toString().contains("colorsys")
                     || !stdout.toString().contains("OpenSSL")
-                    || !stdout.toString().contains("ba7816bf")) {
+                    || !stdout.toString().contains("ba7816bf")
+                    || !stdout.toString().contains("200")) {
                     throw new AssertionError("Fat JAR smoke stdout missing expected output: " + stdout);
                 }
             } finally {
                 runtime.getClass().getMethod("close").invoke(runtime);
             }
+        }
+    }
+
+    private static void requireEntry(JarFile jarFile, String name) {
+        if (jarFile.getEntry(name) == null) {
+            throw new AssertionError("Fat JAR is missing compatibility runtime entry: " + name);
+        }
+    }
+
+    private static void rejectEntry(JarFile jarFile, String name) {
+        if (jarFile.getEntry(name) != null) {
+            throw new AssertionError("Fat JAR contains unused legacy interpreter payload: " + name);
         }
     }
 }
