@@ -24,8 +24,8 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
     private final Path userPackages;
     private final Path helperRoot;
     private final List<Path> extraPythonPaths;
-    private final Path fallbackStdlibRoot;
-    private final Path compatNativeRoot;
+    private final Path compatibilityArchive;
+    private final Path compatibilityRoot;
     private final Path pipBootstrapRoot;
     private final InteractiveInputHandler inputHandler;
 
@@ -57,14 +57,14 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
 
     public CPythonWorkerRuntime(CPythonWorkerCommand command, Path workingDirectory, BurpBridge bridge,
                                 Path userPackages, Path helperRoot, List<Path> extraPythonPaths,
-                                Path fallbackStdlibRoot, InteractiveInputHandler inputHandler) {
+                                Path compatibilityArchive, InteractiveInputHandler inputHandler) {
         this(command, workingDirectory, bridge, userPackages, helperRoot, extraPythonPaths,
-            fallbackStdlibRoot, null, null, inputHandler);
+            compatibilityArchive, null, null, inputHandler);
     }
 
     public CPythonWorkerRuntime(CPythonWorkerCommand command, Path workingDirectory, BurpBridge bridge,
                                 Path userPackages, Path helperRoot, List<Path> extraPythonPaths,
-                                Path fallbackStdlibRoot, Path compatNativeRoot, Path pipBootstrapRoot,
+                                Path compatibilityArchive, Path compatibilityRoot, Path pipBootstrapRoot,
                                 InteractiveInputHandler inputHandler) {
         this.command = Objects.requireNonNull(command, "command");
         this.workingDirectory = Objects.requireNonNull(workingDirectory, "workingDirectory").toAbsolutePath().normalize();
@@ -75,8 +75,8 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
             .filter(Objects::nonNull)
             .map(path -> path.toAbsolutePath().normalize())
             .toList();
-        this.fallbackStdlibRoot = fallbackStdlibRoot == null ? null : fallbackStdlibRoot.toAbsolutePath().normalize();
-        this.compatNativeRoot = compatNativeRoot == null ? null : compatNativeRoot.toAbsolutePath().normalize();
+        this.compatibilityArchive = compatibilityArchive == null ? null : compatibilityArchive.toAbsolutePath().normalize();
+        this.compatibilityRoot = compatibilityRoot == null ? null : compatibilityRoot.toAbsolutePath().normalize();
         this.pipBootstrapRoot = pipBootstrapRoot == null ? null : pipBootstrapRoot.toAbsolutePath().normalize();
         this.inputHandler = Objects.requireNonNull(inputHandler, "inputHandler");
     }
@@ -102,12 +102,9 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
             builder.environment().put(PythonRuntimeBootstrap.ENV_RPC_DIR, rpcDirectory.toString());
             builder.environment().put(PythonRuntimeBootstrap.ENV_USER_PACKAGES, userPackages.toString());
             builder.environment().put(PythonRuntimeBootstrap.ENV_HELPER_ROOT, helperRoot.toString());
-            if (fallbackStdlibRoot != null) {
-                builder.environment().put(PythonRuntimeBootstrap.ENV_FALLBACK_STDLIB_ROOT, fallbackStdlibRoot.toString());
-            }
-            if (compatNativeRoot != null) {
-                builder.environment().put(PythonRuntimeBootstrap.ENV_COMPAT_NATIVE_ROOT, compatNativeRoot.toString());
-                prependPath(builder.environment(), "PATH", compatNativeRoot.toString());
+            if (compatibilityRoot != null) {
+                builder.environment().put(PythonRuntimeBootstrap.ENV_COMPAT_ROOT, compatibilityRoot.toString());
+                prependPath(builder.environment(), "PATH", compatibilityRoot.toString());
             }
             if (pipBootstrapRoot != null) {
                 builder.environment().put(PythonRuntimeBootstrap.ENV_PIP_ROOT, pipBootstrapRoot.toString());
@@ -191,10 +188,19 @@ public final class CPythonWorkerRuntime implements PythonRuntime {
             .append(userPackages)
             .append(File.pathSeparator)
             .append(helperRoot);
+        appendPythonPath(value, compatibilityArchive);
+        appendPythonPath(value, compatibilityRoot);
+        appendPythonPath(value, pipBootstrapRoot);
         for (Path path : extraPythonPaths) {
-            value.append(File.pathSeparator).append(path);
+            appendPythonPath(value, path);
         }
         return value.toString();
+    }
+
+    private static void appendPythonPath(StringBuilder value, Path path) {
+        if (path != null) {
+            value.append(File.pathSeparator).append(path);
+        }
     }
 
     private boolean shouldUseRawCustomCommand(List<String> arguments) {

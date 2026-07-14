@@ -1,6 +1,7 @@
 package com.pythonburp.python;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -8,6 +9,7 @@ import com.pythonburp.storage.ExtensionDataPaths;
 import java.lang.reflect.Constructor;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -90,6 +92,37 @@ final class CPythonRuntimeFactoryTest {
     assertTrue(factory.pipAvailable());
     assertTrue(factory.usingBundledPipFallback());
     assertTrue(factory.pipProbeWarning().contains("Bundled pip startup probe failed"));
+  }
+
+  @Test
+  void exportsCompleteCompatibilityRuntimeToPipEnvironment() throws Exception {
+    Path fakePython = Files.writeString(tempDir.resolve("python.exe"), "fake");
+    Path helperRoot = Files.createDirectories(tempDir.resolve("helper-root"));
+    Path pipRoot = Files.createDirectories(tempDir.resolve("pip-root"));
+    Path compatibilityRoot = Files.createDirectories(tempDir.resolve("python-compat-3.14.3"));
+    Files.writeString(compatibilityRoot.resolve("python314.zip"), "zip");
+    ExtensionDataPaths paths = new ExtensionDataPaths(tempDir.resolve("localappdata/BurpPythonIDE"));
+    PythonRuntimeEnvironment environment =
+        new PythonRuntimeEnvironment(fakePython, 3, 14, 3, "Windows", "AMD64", false);
+
+    CPythonRuntimeFactory factory = reflectiveFactory(
+        new NmapRuntimePaths(tempDir.resolve("Nmap/zenmap/bin")),
+        paths,
+        environment,
+        true,
+        pipRoot,
+        compatibilityRoot.resolve("python314.zip"),
+        compatibilityRoot,
+        null,
+        () -> helperRoot
+    );
+
+    Map<String, String> environmentOverrides = factory.pipEnvironmentOverrides();
+    assertEquals(compatibilityRoot.toString(), environmentOverrides.get("BURP_PYTHON_COMPAT_ROOT"));
+    assertTrue(environmentOverrides.get("PYTHONPATH").startsWith(
+        compatibilityRoot.resolve("python314.zip") + java.io.File.pathSeparator + compatibilityRoot));
+    assertFalse(environmentOverrides.containsKey("BURP_PYTHON_FALLBACK_STDLIB_ROOT"));
+    assertFalse(environmentOverrides.containsKey("BURP_PYTHON_COMPAT_NATIVE_ROOT"));
   }
 
   @Test

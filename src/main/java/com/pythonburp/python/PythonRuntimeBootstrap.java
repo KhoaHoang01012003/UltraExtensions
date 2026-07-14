@@ -4,8 +4,7 @@ public final class PythonRuntimeBootstrap {
     public static final String ENV_RPC_DIR = "BURP_PYTHON_RPC_DIR";
     public static final String ENV_USER_PACKAGES = "BURP_PYTHON_USER_PACKAGES";
     public static final String ENV_HELPER_ROOT = "BURP_PYTHON_HELPER_ROOT";
-    public static final String ENV_FALLBACK_STDLIB_ROOT = "BURP_PYTHON_FALLBACK_STDLIB_ROOT";
-    public static final String ENV_COMPAT_NATIVE_ROOT = "BURP_PYTHON_COMPAT_NATIVE_ROOT";
+    public static final String ENV_COMPAT_ROOT = "BURP_PYTHON_COMPAT_ROOT";
     public static final String ENV_PIP_ROOT = "BURP_PYTHON_PIP_ROOT";
 
     private static final String COMMON_BOOTSTRAP = """
@@ -21,28 +20,29 @@ public final class PythonRuntimeBootstrap {
                     return
             sys.path.insert(0, path)
 
+        compat_root = os.environ.get("%s", "")
+        compat_zip = os.path.join(compat_root, "python314.zip") if compat_root else ""
+
         for candidate in reversed([
             os.environ.get("%s", ""),
             os.environ.get("%s", ""),
             os.environ.get("%s", ""),
-            os.environ.get("%s", ""),
-            os.environ.get("%s", ""),
+            compat_zip,
+            compat_root,
         ]):
             _burp_prepend(candidate)
 
-        compat_native = os.environ.get("%s", "")
-        if compat_native and hasattr(os, "add_dll_directory"):
+        _burp_dll_directory_handles = []
+        if compat_root and hasattr(os, "add_dll_directory"):
             try:
-                os.add_dll_directory(compat_native)
+                _burp_dll_directory_handles.append(os.add_dll_directory(compat_root))
             except OSError:
                 pass
         """.formatted(
-        ENV_PIP_ROOT,
-        ENV_FALLBACK_STDLIB_ROOT,
-        ENV_COMPAT_NATIVE_ROOT,
-        ENV_HELPER_ROOT,
+        ENV_COMPAT_ROOT,
         ENV_USER_PACKAGES,
-        ENV_COMPAT_NATIVE_ROOT
+        ENV_HELPER_ROOT,
+        ENV_PIP_ROOT
     );
 
     private static final String RPC_BOOTSTRAP = """
@@ -148,10 +148,31 @@ public final class PythonRuntimeBootstrap {
         runpy.run_module("pip", run_name="__main__", alter_sys=True)
         """;
 
+    private static final String READINESS_PROBE_SCRIPT = COMMON_BOOTSTRAP + """
+        import _socket
+        import _ssl
+        import hashlib
+        import select
+        import socket
+        import ssl
+        import unicodedata
+        import runpy
+        import sys
+
+        ssl.create_default_context()
+        sys.argv = ["pip", "--version"]
+        runpy.run_module("pip", run_name="__main__", alter_sys=True)
+        """;
+
     private static final String PIP_BOOTSTRAP = (
         "exec(compile(bytes.fromhex('%s').decode('utf-8'), "
             + "'<burp-python-pip-bootstrap>', 'exec'))"
     ).formatted(hex(PIP_BOOTSTRAP_SCRIPT));
+
+    private static final String READINESS_PROBE = (
+        "exec(compile(bytes.fromhex('%s').decode('utf-8'), "
+            + "'<burp-python-readiness-probe>', 'exec'))"
+    ).formatted(hex(READINESS_PROBE_SCRIPT));
 
     private PythonRuntimeBootstrap() {
     }
@@ -166,6 +187,10 @@ public final class PythonRuntimeBootstrap {
 
     public static String pipBootstrapCommand() {
         return PIP_BOOTSTRAP;
+    }
+
+    public static String readinessProbeCommand() {
+        return READINESS_PROBE;
     }
 
     private static String hex(String value) {

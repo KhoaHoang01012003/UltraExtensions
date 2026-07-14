@@ -11,12 +11,26 @@ public record PythonRuntimeEnvironment(
     int micro,
     String platform,
     String architecture,
+    String runtimeDetails,
     boolean pipAvailable
 ) {
+    public PythonRuntimeEnvironment(
+        Path executable,
+        int major,
+        int minor,
+        int micro,
+        String platform,
+        String architecture,
+        boolean pipAvailable
+    ) {
+        this(executable, major, minor, micro, platform, architecture, "", pipAvailable);
+    }
+
     public PythonRuntimeEnvironment {
         executable = Objects.requireNonNull(executable, "executable").toAbsolutePath().normalize();
         platform = blankTo(platform, "windows");
         architecture = blankTo(architecture, "x64");
+        runtimeDetails = runtimeDetails == null ? "" : runtimeDetails;
     }
 
     public String version() {

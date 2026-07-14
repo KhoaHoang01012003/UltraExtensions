@@ -60,7 +60,7 @@ public class EmbeddedPipRunner {
             if (key == null || key.isBlank() || value == null || value.isBlank()) {
                 continue;
             }
-            if ("PYTHONPATH".equalsIgnoreCase(key)) {
+            if ("PYTHONPATH".equalsIgnoreCase(key) || "PATH".equalsIgnoreCase(key)) {
                 String existing = target.getOrDefault(key, "");
                 target.put(key, existing == null || existing.isBlank()
                     ? value
