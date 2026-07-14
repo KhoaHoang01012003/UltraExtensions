@@ -21,7 +21,7 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
     public static final String PIP_RESOURCE_ROOT = "/cpython/windows-x64/Lib/site-packages/pip";
     public static final String PIP_STAGE_ID = "python-worker-pip-bootstrap1";
     public static final String COMPAT_RESOURCE_ROOT = "/cpython/windows-x64/python-compat-3.14.3";
-    public static final String COMPAT_STAGE_ID = "python-worker-compat3143-full1";
+    public static final String COMPAT_STAGE_ID = "python-worker-compat3143-mingw-ssl1";
 
     private final NmapRuntimePaths runtimePaths;
     private final ExtensionDataPaths paths;
@@ -231,11 +231,10 @@ public final class CPythonRuntimeFactory implements Supplier<PythonRuntime> {
         ).stage();
         Path compatibilityRoot = stageRoot.resolve("compat").normalize();
         requireCompatibilityFile(compatibilityRoot, "python314.zip");
-        requireCompatibilityFile(compatibilityRoot, "_socket.pyd");
         requireCompatibilityFile(compatibilityRoot, "_ssl.pyd");
-        requireCompatibilityFile(compatibilityRoot, "unicodedata.pyd");
-        requireCompatibilityFile(compatibilityRoot, "libssl-3.dll");
-        requireCompatibilityFile(compatibilityRoot, "libcrypto-3.dll");
+        requireCompatibilityFile(compatibilityRoot, "_hashlib.pyd");
+        requireCompatibilityFile(compatibilityRoot, "libssl-3-x64.dll");
+        requireCompatibilityFile(compatibilityRoot, "libcrypto-3-x64.dll");
         return compatibilityRoot;
     }
 

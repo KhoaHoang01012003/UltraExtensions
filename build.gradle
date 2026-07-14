@@ -8,7 +8,12 @@ version = "0.3.0"
 ext {
     cpythonVersion = "3.12.10"
     compatPythonVersion = "3.14.3"
-    compatPythonArchiveSha256 = "AD4961A479DEDBEB7C7D113253F8DB1B1935586B73C27488712BEEC4F2C894E6"
+    compatPythonPackageName = "mingw-w64-x86_64-python-3.14.3-1-any.pkg.tar.zst"
+    compatPythonPackageSha256 = "EA17E55CF420B1C5AD50C3553B70B47C1C2C3CC63BD2C4D75441CB1A80D4A69F"
+    compatOpenSslPackageName = "mingw-w64-x86_64-openssl-3.6.3-1-any.pkg.tar.zst"
+    compatOpenSslPackageSha256 = "82DE7FF886112374FFAE9E7B3C843C82342E198543FB024790416EF56434FE9F"
+    nmapTestVersion = "7.99"
+    nmapTestInstallerSha256 = "FDA839F35D9F8F18A11670E17D0332CE9D05A3556C5A20E91B0B56C57774F611"
     cpythonPopularPackages = [
         "requests",
         "httpx",
@@ -81,17 +86,18 @@ tasks.register("prepareCpythonBundle", Exec) {
     group = "build"
     def outputDir = layout.buildDirectory.dir("generated/cpython-runtime")
     def downloadDir = layout.buildDirectory.dir("downloads/cpython")
-    def compatArchive = layout.buildDirectory.file("downloads/cpython/python-${compatPythonVersion}-embed-amd64.zip")
     def packages = cpythonPopularPackages.join(",")
 
     inputs.property("cpythonVersion", cpythonVersion)
     inputs.property("compatPythonVersion", compatPythonVersion)
-    inputs.property("compatPythonArchiveSha256", compatPythonArchiveSha256)
+    inputs.property("compatPythonPackageName", compatPythonPackageName)
+    inputs.property("compatPythonPackageSha256", compatPythonPackageSha256)
+    inputs.property("compatOpenSslPackageName", compatOpenSslPackageName)
+    inputs.property("compatOpenSslPackageSha256", compatOpenSslPackageSha256)
     inputs.property("packages", packages)
     inputs.file("scripts/prepare-cpython-bundle.ps1")
     inputs.dir("src/main/python-worker")
     outputs.dir(outputDir.map { it.dir("cpython/windows-x64") })
-    outputs.file(compatArchive)
 
     commandLine(
         "powershell.exe",
@@ -104,8 +110,14 @@ tasks.register("prepareCpythonBundle", Exec) {
         cpythonVersion,
         "-CompatPythonVersion",
         compatPythonVersion,
-        "-CompatArchiveSha256",
-        compatPythonArchiveSha256,
+        "-CompatPythonPackageName",
+        compatPythonPackageName,
+        "-CompatPythonPackageSha256",
+        compatPythonPackageSha256,
+        "-CompatOpenSslPackageName",
+        compatOpenSslPackageName,
+        "-CompatOpenSslPackageSha256",
+        compatOpenSslPackageSha256,
         "-OutputDir",
         outputDir.get().asFile.absolutePath,
         "-DownloadDir",
@@ -117,27 +129,38 @@ tasks.register("prepareCpythonBundle", Exec) {
     )
 }
 
-def strippedPythonTestBin = layout.buildDirectory.dir("test-runtimes/python-${compatPythonVersion}-stripped")
-def compatPythonArchive = layout.buildDirectory.file("downloads/cpython/python-${compatPythonVersion}-embed-amd64.zip")
+def nmapTestExtractRoot = layout.buildDirectory.dir("nmap-${nmapTestVersion}-extracted")
+def nmapTestDownloadDir = layout.buildDirectory.dir("downloads/nmap")
+def nmapZenmapTestBin = nmapTestExtractRoot.map { it.dir("zenmap/bin") }
 
-tasks.register("preparePythonCompatibilityTestRuntime", Sync) {
-    description = "Creates a stripped Python 3.14.3 directory for compatibility smoke tests."
+tasks.register("preparePythonCompatibilityTestRuntime", Exec) {
+    description = "Creates a clean Nmap Zenmap Python directory for compatibility smoke tests."
     group = "verification"
-    dependsOn tasks.named("prepareCpythonBundle")
-    from({ zipTree(compatPythonArchive.get().asFile) }) {
-        include "python.exe"
-        include "python3.dll"
-        include "python314.dll"
-        include "python314.zip"
-        include "vcruntime140.dll"
-        include "vcruntime140_1.dll"
-    }
-    into strippedPythonTestBin
+    inputs.property("nmapTestVersion", nmapTestVersion)
+    inputs.property("nmapTestInstallerSha256", nmapTestInstallerSha256)
+    inputs.file("scripts/prepare-nmap-test-runtime.ps1")
+    outputs.dir(nmapTestExtractRoot)
+    commandLine(
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        file("scripts/prepare-nmap-test-runtime.ps1").absolutePath,
+        "-NmapVersion",
+        nmapTestVersion,
+        "-InstallerSha256",
+        nmapTestInstallerSha256,
+        "-OutputDir",
+        nmapTestExtractRoot.get().asFile.absolutePath,
+        "-DownloadDir",
+        nmapTestDownloadDir.get().asFile.absolutePath
+    )
 }
 
 tasks.named("test") {
     dependsOn tasks.named("preparePythonCompatibilityTestRuntime")
-    systemProperty "burpPythonTestZenmapBin", strippedPythonTestBin.get().asFile.absolutePath
+    systemProperty "burpPythonTestZenmapBin", nmapZenmapTestBin.get().asFile.absolutePath
 }
 
 tasks.named("processResources") {
@@ -152,7 +175,7 @@ tasks.register("packageSmokeTest", Test) {
     classpath = sourceSets.test.runtimeClasspath
     include "**/PackageSmokeTest.class"
     dependsOn tasks.named("preparePythonCompatibilityTestRuntime")
-    systemProperty "burpPythonTestZenmapBin", strippedPythonTestBin.get().asFile.absolutePath
+    systemProperty "burpPythonTestZenmapBin", nmapZenmapTestBin.get().asFile.absolutePath
     shouldRunAfter test
 }
 
@@ -188,7 +211,7 @@ tasks.register("fatJarIsolatedSmoke", JavaExec) {
     dependsOn tasks.named("fatJar"), tasks.named("compileTestJava"), tasks.named("preparePythonCompatibilityTestRuntime")
     classpath = sourceSets.test.output.classesDirs
     mainClass = "com.pythonburp.fatjar.IsolatedFatJarSmoke"
-    systemProperty "burpPythonTestZenmapBin", strippedPythonTestBin.get().asFile.absolutePath
+    systemProperty "burpPythonTestZenmapBin", nmapZenmapTestBin.get().asFile.absolutePath
     shouldRunAfter tasks.named("packageSmokeTest")
     doFirst {
         args = [tasks.named("fatJar").get().archiveFile.get().asFile.absolutePath]

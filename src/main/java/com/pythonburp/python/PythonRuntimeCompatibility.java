@@ -26,9 +26,11 @@ final class PythonRuntimeCompatibility {
                 "The bundled compatibility runtime requires Windows x64, but detected " + architecture + "."
             );
         }
-        if (runtimeDetails == null || !runtimeDetails.contains("MSC v.")) {
+        String normalizedRuntimeDetails = runtimeDetails == null ? "" : runtimeDetails.toLowerCase(Locale.ROOT);
+        if (!normalizedRuntimeDetails.contains("mingw gcc 15.2.0")) {
             throw new IllegalStateException(
-                "The bundled compatibility runtime requires an MSVC CPython build, but detected: " + runtimeDetails
+                "The bundled compatibility runtime requires the Nmap 7.99 MinGW CPython build, but detected: "
+                    + runtimeDetails
             );
         }
     }

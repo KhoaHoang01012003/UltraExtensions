@@ -25,12 +25,15 @@ public final class IsolatedFatJarSmoke {
         }
         try (JarFile jarFile = new JarFile(jar.toFile())) {
             requireEntry(jarFile, "cpython/windows-x64/python-compat-3.14.3/python314.zip");
-            requireEntry(jarFile, "cpython/windows-x64/python-compat-3.14.3/_socket.pyd");
             requireEntry(jarFile, "cpython/windows-x64/python-compat-3.14.3/_ssl.pyd");
-            requireEntry(jarFile, "cpython/windows-x64/python-compat-3.14.3/unicodedata.pyd");
+            requireEntry(jarFile, "cpython/windows-x64/python-compat-3.14.3/_hashlib.pyd");
+            requireEntry(jarFile, "cpython/windows-x64/python-compat-3.14.3/libssl-3-x64.dll");
+            requireEntry(jarFile, "cpython/windows-x64/python-compat-3.14.3/libcrypto-3-x64.dll");
             if (jarFile.getEntry("cpython/windows-x64/python-compat-3.14.3/python.exe") != null) {
                 throw new AssertionError("Compatibility runtime must not bundle an AppData python.exe");
             }
+            rejectEntry(jarFile, "cpython/windows-x64/python-compat-3.14.3/libssl-3.dll");
+            rejectEntry(jarFile, "cpython/windows-x64/python-compat-3.14.3/libcrypto-3.dll");
             rejectEntry(jarFile, "cpython/windows-x64/python.exe");
             rejectEntry(jarFile, "cpython/windows-x64/pythonw.exe");
             rejectEntry(jarFile, "cpython/windows-x64/python312.dll");

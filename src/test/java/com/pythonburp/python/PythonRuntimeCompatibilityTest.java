@@ -11,10 +11,18 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 final class PythonRuntimeCompatibilityTest {
     @Test
-    void acceptsExactWindowsX64MsvcPython3143Fingerprint() throws Exception {
+    void acceptsExactWindowsX64MingwPython3143Fingerprint() throws Exception {
         Method validate = validator();
 
-        assertDoesNotThrow(() -> validate.invoke(null, 3, 14, 3, "Windows", "AMD64", "Python 3.14.3 [MSC v.1944 64 bit (AMD64)]"));
+        assertDoesNotThrow(() -> validate.invoke(
+            null,
+            3,
+            14,
+            3,
+            "Windows",
+            "AMD64",
+            "3.14.3 (main, Feb  5 2026, 13:35:35)  [MINGW GCC 15.2.0 64 bit (AMD64)]"
+        ));
     }
 
     @Test
@@ -22,19 +30,27 @@ final class PythonRuntimeCompatibilityTest {
         Method validate = validator();
 
         InvocationTargetException error = assertThrows(InvocationTargetException.class,
-            () -> validate.invoke(null, 3, 14, 6, "Windows", "AMD64", "Python 3.14.6 [MSC v.1944 64 bit (AMD64)]"));
+            () -> validate.invoke(
+                null,
+                3,
+                14,
+                6,
+                "Windows",
+                "AMD64",
+                "3.14.6 (main, Feb  5 2026, 13:35:35)  [MINGW GCC 15.2.0 64 bit (AMD64)]"
+            ));
 
         assertTrue(error.getCause().getMessage().contains("3.14.3"));
     }
 
     @Test
-    void rejectsNonMsvcRuntime() throws Exception {
+    void rejectsNonMingwRuntime() throws Exception {
         Method validate = validator();
 
         InvocationTargetException error = assertThrows(InvocationTargetException.class,
-            () -> validate.invoke(null, 3, 14, 3, "Windows", "AMD64", "Python 3.14.3 [GCC 15.2.0]"));
+            () -> validate.invoke(null, 3, 14, 3, "Windows", "AMD64", "Python 3.14.3 [MSC v.1944 64 bit (AMD64)]"));
 
-        assertTrue(error.getCause().getMessage().contains("MSVC"));
+        assertTrue(error.getCause().getMessage().contains("MinGW"));
     }
 
     private static Method validator() throws Exception {
