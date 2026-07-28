@@ -1,0 +1,228 @@
+plugins {
+    id "java"
+}
+
+group = "com.pythonburp"
+version = "0.3.0"
+
+ext {
+    cpythonVersion = "3.12.10"
+    compatPythonVersion = "3.14.3"
+    compatPythonPackageName = "mingw-w64-x86_64-python-3.14.3-1-any.pkg.tar.zst"
+    compatPythonPackageSha256 = "EA17E55CF420B1C5AD50C3553B70B47C1C2C3CC63BD2C4D75441CB1A80D4A69F"
+    compatOpenSslPackageName = "mingw-w64-x86_64-openssl-3.6.3-1-any.pkg.tar.zst"
+    compatOpenSslPackageSha256 = "82DE7FF886112374FFAE9E7B3C843C82342E198543FB024790416EF56434FE9F"
+    nmapTestVersion = "7.99"
+    nmapTestInstallerSha256 = "FDA839F35D9F8F18A11670E17D0332CE9D05A3556C5A20E91B0B56C57774F611"
+    cpythonPopularPackages = [
+        "requests",
+        "httpx",
+        "beautifulsoup4",
+        "html5lib",
+        "lxml",
+        "defusedxml",
+        "xmltodict",
+        "python-dateutil",
+        "charset-normalizer",
+        "idna",
+        "tabulate",
+        "rich",
+        "colorama",
+        "PyYAML",
+        "pyjwt",
+        "pypdf",
+        "passlib",
+        "cryptography",
+        "pycryptodome",
+        "dnspython",
+        "websockets",
+        "aiohttp",
+        "pydantic",
+        "orjson",
+        "zstandard",
+        "pillow",
+        "numpy",
+        "pandas",
+        "scipy",
+        "scapy",
+        "parsel",
+        "cssselect"
+    ]
+}
+
+dependencies {
+    compileOnly "net.portswigger.burp.extensions:montoya-api:2026.4"
+    testCompileOnly "net.portswigger.burp.extensions:montoya-api:2026.4"
+    testRuntimeOnly "net.portswigger.burp.extensions:montoya-api:2026.4"
+
+    implementation "org.bouncycastle:bcprov-jdk18on:1.84"
+    implementation "org.bouncycastle:bcpkix-jdk18on:1.84"
+
+    testImplementation platform("org.junit:junit-bom:6.1.0")
+    testImplementation "org.junit.jupiter:junit-jupiter"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
+    options.release = 21
+}
+
+test {
+    useJUnitPlatform()
+    exclude "**/PackageSmokeTest.class"
+}
+
+sourceSets {
+    main {
+        resources {
+            srcDir(layout.buildDirectory.dir("generated/cpython-runtime"))
+        }
+    }
+}
+
+tasks.register("prepareCpythonBundle", Exec) {
+    description = "Builds bundled pip assets and the exact CPython 3.14.3 compatibility runtime."
+    group = "build"
+    def outputDir = layout.buildDirectory.dir("generated/cpython-runtime")
+    def downloadDir = layout.buildDirectory.dir("downloads/cpython")
+    def packages = cpythonPopularPackages.join(",")
+
+    inputs.property("cpythonVersion", cpythonVersion)
+    inputs.property("compatPythonVersion", compatPythonVersion)
+    inputs.property("compatPythonPackageName", compatPythonPackageName)
+    inputs.property("compatPythonPackageSha256", compatPythonPackageSha256)
+    inputs.property("compatOpenSslPackageName", compatOpenSslPackageName)
+    inputs.property("compatOpenSslPackageSha256", compatOpenSslPackageSha256)
+    inputs.property("packages", packages)
+    inputs.file("scripts/prepare-cpython-bundle.ps1")
+    inputs.dir("src/main/python-worker")
+    outputs.dir(outputDir.map { it.dir("cpython/windows-x64") })
+
+    commandLine(
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        file("scripts/prepare-cpython-bundle.ps1").absolutePath,
+        "-PythonVersion",
+        cpythonVersion,
+        "-CompatPythonVersion",
+        compatPythonVersion,
+        "-CompatPythonPackageName",
+        compatPythonPackageName,
+        "-CompatPythonPackageSha256",
+        compatPythonPackageSha256,
+        "-CompatOpenSslPackageName",
+        compatOpenSslPackageName,
+        "-CompatOpenSslPackageSha256",
+        compatOpenSslPackageSha256,
+        "-OutputDir",
+        outputDir.get().asFile.absolutePath,
+        "-DownloadDir",
+        downloadDir.get().asFile.absolutePath,
+        "-Packages",
+        packages,
+        "-WorkerModulesDir",
+        file("src/main/python-worker").absolutePath
+    )
+}
+
+def nmapTestExtractRoot = layout.buildDirectory.dir("nmap-${nmapTestVersion}-extracted")
+def nmapTestDownloadDir = layout.buildDirectory.dir("downloads/nmap")
+def nmapZenmapTestBin = nmapTestExtractRoot.map { it.dir("zenmap/bin") }
+
+tasks.register("preparePythonCompatibilityTestRuntime", Exec) {
+    description = "Creates a clean Nmap Zenmap Python directory for compatibility smoke tests."
+    group = "verification"
+    inputs.property("nmapTestVersion", nmapTestVersion)
+    inputs.property("nmapTestInstallerSha256", nmapTestInstallerSha256)
+    inputs.file("scripts/prepare-nmap-test-runtime.ps1")
+    outputs.dir(nmapTestExtractRoot)
+    commandLine(
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        file("scripts/prepare-nmap-test-runtime.ps1").absolutePath,
+        "-NmapVersion",
+        nmapTestVersion,
+        "-InstallerSha256",
+        nmapTestInstallerSha256,
+        "-OutputDir",
+        nmapTestExtractRoot.get().asFile.absolutePath,
+        "-DownloadDir",
+        nmapTestDownloadDir.get().asFile.absolutePath
+    )
+}
+
+tasks.named("test") {
+    dependsOn tasks.named("preparePythonCompatibilityTestRuntime")
+    systemProperty "burpPythonTestZenmapBin", nmapZenmapTestBin.get().asFile.absolutePath
+}
+
+tasks.named("processResources") {
+    dependsOn tasks.named("prepareCpythonBundle")
+}
+
+tasks.register("packageSmokeTest", Test) {
+    description = "Runs CPython worker import and package compatibility smoke tests."
+    group = "verification"
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    include "**/PackageSmokeTest.class"
+    dependsOn tasks.named("preparePythonCompatibilityTestRuntime")
+    systemProperty "burpPythonTestZenmapBin", nmapZenmapTestBin.get().asFile.absolutePath
+    shouldRunAfter test
+}
+
+tasks.register("fatJar", Jar) {
+    group = "build"
+    description = "Builds the Burp-loadable single JAR extension."
+    archiveClassifier = "all"
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    from sourceSets.main.output
+    from {
+        configurations.runtimeClasspath.findAll { dependency ->
+            dependency.isDirectory() || dependency.name.endsWith(".jar")
+        }.collect { dependency ->
+            dependency.isDirectory() ? dependency : zipTree(dependency)
+        }
+    }
+
+    exclude "META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA"
+
+    manifest {
+        attributes(
+            "Implementation-Title": "Burp Python IDE Enhanced",
+            "Implementation-Version": project.version,
+            "Multi-Release": "true"
+        )
+    }
+}
+
+tasks.register("fatJarIsolatedSmoke", JavaExec) {
+    description = "Loads the fat JAR through an isolated classloader and runs a CPython worker smoke script."
+    group = "verification"
+    dependsOn tasks.named("fatJar"), tasks.named("compileTestJava"), tasks.named("preparePythonCompatibilityTestRuntime")
+    classpath = sourceSets.test.output.classesDirs
+    mainClass = "com.pythonburp.fatjar.IsolatedFatJarSmoke"
+    systemProperty "burpPythonTestZenmapBin", nmapZenmapTestBin.get().asFile.absolutePath
+    shouldRunAfter tasks.named("packageSmokeTest")
+    doFirst {
+        args = [tasks.named("fatJar").get().archiveFile.get().asFile.absolutePath]
+    }
+}
+
+tasks.named("build") {
+    dependsOn tasks.named("fatJar")
+}
+
+check {
+    dependsOn tasks.named("packageSmokeTest")
+    dependsOn tasks.named("fatJarIsolatedSmoke")
+}
